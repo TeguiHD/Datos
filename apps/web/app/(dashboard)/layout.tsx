@@ -6,6 +6,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { api, ApiError } from '@/lib/api';
 import { FloatingAiChat } from './_components/FloatingAiChat';
+import { Sidebar } from './_components/Sidebar';
+import { Topbar } from './_components/Topbar';
 
 interface MeResponse {
   id: string;
@@ -20,6 +22,7 @@ interface MeResponse {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const [mobileOpen, setMobileOpen] = useState(false);
   const me = useQuery({
     queryKey: ['auth-me'],
     queryFn: () => api<MeResponse>('/api/auth/me'),
@@ -36,6 +39,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const target = me.data.totpEnabled ? '/verify-2fa' : '/setup-2fa';
     if (pathname !== target) router.replace(target);
   }, [me.data, me.error, pathname, router]);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
 
   if (me.isLoading) {
     return <GateState title="Validando sesión" detail="Comprobando autenticación y segundo factor." />;
@@ -59,51 +66,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="min-h-screen md:grid md:grid-cols-[250px_1fr]">
-      <aside className="sticky top-0 hidden h-screen md:flex md:flex-col border-r border-slate-200/80 glass p-5">
-        <div className="flex items-center gap-2 mb-6">
-          <span className="inline-grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 text-white shadow-[inset_0_1px_rgba(255,255,255,0.3)] text-sm font-bold">
-            d.
-          </span>
-          <div>
-            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500 leading-none">Panel</div>
-            <div className="text-base font-semibold text-brand-900">datos.nicoholas</div>
-          </div>
-        </div>
-        <div className="space-y-1">
-          <Nav href="/dashboard" label="Resumen" />
-          <Nav href="/dashboard/tareas" label="Tareas" />
-          <Nav href="/dashboard/cronograma" label="Cronograma" />
-          <Nav href="/dashboard/admin" label="Admin" />
-        </div>
-        <div className="mt-auto pt-6">
-          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500 mb-2">Seguridad</div>
-          <SessionActions />
-        </div>
-      </aside>
-
-      <div className="min-w-0">
-        <header className="md:hidden sticky top-0 z-20 border-b border-slate-200/80 glass px-4 py-3">
-          <div className="flex items-center gap-2">
-            <span className="inline-grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 text-white text-xs font-bold">
-              d.
-            </span>
-            <div className="font-semibold text-brand-900 text-sm">datos.nicoholas</div>
-          </div>
-          <nav className="mt-2 -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 custom-scrollbar">
-            <Nav href="/dashboard" label="Resumen" compact />
-            <Nav href="/dashboard/tareas" label="Tareas" compact />
-            <Nav href="/dashboard/cronograma" label="Cronograma" compact />
-            <Nav href="/dashboard/admin" label="Admin" compact />
-          </nav>
-          <div className="mt-3">
-            <SessionActions compact />
-          </div>
-        </header>
-
-        <main className="p-4 md:p-8 page-enter">{children}</main>
+    <div className="flex min-h-screen bg-bg">
+      <Sidebar mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Topbar
+          email={me.data?.email ?? ''}
+          role={me.data?.role ?? ''}
+          onMenuClick={() => setMobileOpen(true)}
+        />
+        <main className="flex-1 overflow-auto">
+          <div className="mx-auto max-w-screen-2xl px-4 py-5 sm:px-6">{children}</div>
+        </main>
       </div>
-
       <FloatingAiChat />
     </div>
   );
