@@ -4,12 +4,13 @@ import {
   Get,
   Post,
   Req,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import 'multer';
 import { Throttle } from '@nestjs/throttler';
 import { Role } from '@prisma/client';
@@ -35,6 +36,22 @@ export class AdminController {
     private prisma: PrismaService,
   ) {}
 
+  @Get('import/template')
+  async template(@Res({ passthrough: true }) res: Response) {
+    const content = await this.imports.template();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="plantilla-datos-nicoholas.xlsx"');
+    return content;
+  }
+
+  @Post('import/preview')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @UseInterceptors(FileInterceptor('file'))
+  async previewExcel(@UploadedFile() file: Express.Multer.File) {
+    this.assertValidExcel(file);
+    return this.imports.previewFile(file.originalname, file.buffer);
+  }
+
   @Post('import')
   @Throttle({ default: { ttl: 60_000, limit: 3 } })
   @UseInterceptors(FileInterceptor('file'))
@@ -43,16 +60,20 @@ export class AdminController {
     @UploadedFile() file: Express.Multer.File,
     @Req() req: Request,
   ) {
-    if (!file) throw new BadRequestException('No file');
-    if (!file.originalname.toLowerCase().endsWith('.xlsx')) throw new BadRequestException('Must be .xlsx');
-    if (!XLSX_MIME.has(file.mimetype)) throw new BadRequestException('Invalid MIME type');
-    if (file.size > 10 * 1024 * 1024) throw new BadRequestException('File too large');
-    if (!file.buffer.subarray(0, 4).equals(XLSX_MAGIC)) throw new BadRequestException('Bad magic bytes');
+    this.assertValidExcel(file);
     return this.imports.importFile(user.id, file.originalname, file.buffer, requestContext(req));
   }
 
   @Get('imports')
   listImports() {
     return this.prisma.importRun.findMany({ orderBy: { createdAt: 'desc' }, take: 50 });
+  }
+
+  private assertValidExcel(file: Express.Multer.File | undefined) {
+    if (!file) throw new BadRequestException('No file');
+    if (!file.originalname.toLowerCase().endsWith('.xlsx')) throw new BadRequestException('Must be .xlsx');
+    if (!XLSX_MIME.has(file.mimetype)) throw new BadRequestException('Invalid MIME type');
+    if (file.size > 10 * 1024 * 1024) throw new BadRequestException('File too large');
+    if (!file.buffer.subarray(0, 4).equals(XLSX_MAGIC)) throw new BadRequestException('Bad magic bytes');
   }
 }
