@@ -1,0 +1,20 @@
+node_modules
+.pnpm-store
+dist
+build
+.next
+coverage
+*.log
+.DS_Store
+
+.env
+.env.*
+!.env.example
+
+# Secrets / data
+idea.txt
+*.xlsx
+!apps/api/test/fixtures/*.xlsx
+
+# Prisma
+apps/api/prisma/migrations/*/migration.sql.journal

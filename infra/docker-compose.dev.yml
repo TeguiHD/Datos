@@ -1,0 +1,19 @@
+name: datos-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports: ["5433:5432"]
+    environment:
+      POSTGRES_USER: datos
+      POSTGRES_PASSWORD: datos
+      POSTGRES_DB: datos
+    volumes:
+      - pgdata-dev:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6380:6379"]
+
+volumes:
+  pgdata-dev:

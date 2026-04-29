@@ -1,0 +1,35 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          script: |
+            set -euo pipefail
+            cd /opt/datos
+            git fetch --all --prune
+            git checkout main
+            git pull --ff-only origin main
+            docker compose -f infra/docker-compose.yml --env-file .env build --pull
+            docker compose -f infra/docker-compose.yml --env-file .env up -d postgres redis
+            docker compose -f infra/docker-compose.yml --env-file .env run --rm api sh -c "node_modules/.bin/prisma migrate deploy"
+            docker compose -f infra/docker-compose.yml --env-file .env up -d
+            docker image prune -f

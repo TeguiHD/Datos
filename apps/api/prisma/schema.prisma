@@ -1,0 +1,187 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPERADMIN
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum ExecStatus {
+  PENDING
+  DONE
+  OVERDUE
+  SKIPPED
+}
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  passwordHash    String
+  totpSecretEnc   String?
+  totpEnabled     Boolean   @default(false)
+  backupCodesEnc  String?
+  role            Role      @default(VIEWER)
+  mustChangePass  Boolean   @default(false)
+  failedLogins    Int       @default(0)
+  lockedUntil     DateTime?
+  lastLoginAt     DateTime?
+  lastLoginIp     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  sessions        Session[]
+  auditLogs       AuditLog[]
+  savedViews      ScheduleSavedView[]
+
+  @@index([role])
+}
+
+model ScheduleSavedView {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  filters   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId, updatedAt])
+}
+
+model Session {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshHash String    @unique
+  familyId    String
+  tfaVerified Boolean   @default(false)
+  userAgent   String
+  ip          String
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+}
+
+model MaintenanceTask {
+  id                    String            @id @default(cuid())
+  andamios              String?
+  materiales            String?
+  comentarios           String?
+  psr                   String?
+  centroPlanificacion   String?
+  claseActividadPm      String?
+  claseOrden            String?
+  campoClasificacion    String?
+  planMantPreventivo    String?
+  estrategiaMantenim    String?
+  descPosicionMant      String?
+  ultimaOrden           String?
+  indicadorAbc          String?
+  ubicacionTecnica      String?
+  denomUbicacionTecnica String?
+  posicionMant          String?
+  ptoTbjoResponsable    String?
+  equipo                String?
+  denomObjetoTecnico    String?
+  tipoHojaRuta          String?
+  grupoHojasRuta        String?
+  contGrupoHRuta        String?
+  hojaRuta              String?
+  creadoEl              DateTime?
+  claveModelo           String?
+  frecuenciaCodigo      String?
+  hhReal                Decimal?          @db.Decimal(10, 2)
+  frecuenciaMeses       Int?
+  mesInicio             Int?
+  sourceRowHash         String?
+  hasDiscrepancy        Boolean           @default(false)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  schedule              MonthlySchedule[]
+  executions            TaskExecution[]
+
+  @@index([indicadorAbc])
+  @@index([frecuenciaCodigo])
+  @@index([psr])
+  @@index([centroPlanificacion])
+  @@index([ubicacionTecnica])
+  @@index([equipo])
+}
+
+model MonthlySchedule {
+  taskId String
+  year   Int
+  month  Int
+  hh     Decimal         @db.Decimal(10, 2)
+  source String          @default("EXCEL")
+  task   MaintenanceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, year, month])
+  @@index([year, month])
+}
+
+model TaskExecution {
+  id        String          @id @default(cuid())
+  taskId    String
+  task      MaintenanceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  dueDate   DateTime
+  doneDate  DateTime?
+  hhPlanned Decimal         @db.Decimal(10, 2)
+  hhActual  Decimal?        @db.Decimal(10, 2)
+  status    ExecStatus      @default(PENDING)
+  operator  String?
+  notes     String?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@unique([taskId, dueDate])
+  @@index([dueDate])
+  @@index([status])
+  @@index([taskId, status])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String?
+  entityId  String?
+  before    Json?
+  after     Json?
+  ip        String
+  userAgent String
+  prevHash  String
+  hash      String   @unique
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@index([entity, entityId])
+}
+
+model ImportRun {
+  id         String   @id @default(cuid())
+  userId     String?
+  filename   String
+  fileHash   String
+  rowsTotal  Int
+  rowsOk     Int
+  rowsErr    Int
+  status     String
+  message    String?
+  createdAt  DateTime @default(now())
+}
