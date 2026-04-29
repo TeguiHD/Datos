@@ -2219,3 +2219,25 @@ git commit -m "feat(web): SP1 design system rebrand complete — dark mode, dens
 **Placeholder scan:** ningún TBD, ningún "implement later", ningún "similar a Task N" encontrado.
 
 **Type consistency:** `ExecStatus` importado de `@/lib/types` en StatusBadge y usado igual que en page.tsx. `Tone` definido localmente en KpiCard y no exportado (no necesario). `Density` exportado de `useDensity.ts` e importado en `DensityProvider.tsx`. `useSidebarCollapsed` retorna `{ collapsed, toggle, setCollapsed }` — usado consistentemente en `Sidebar.tsx`.
+
+---
+
+## Addendum 2026-04-29 — Cierre de brechas de visión completa
+
+Se completaron los pendientes detectados tras el rebrand inicial:
+
+- [x] `Cmd+K` dejó de ser placeholder: nueva `CommandPalette` con navegación y búsqueda contextual.
+- [x] Filtros principales del dashboard y tareas viven en URL para deep-links reales.
+- [x] Eliminación de vistas guardadas usa diálogo de confirmación antes de ejecutar acción destructiva.
+- [x] Fechas, totales y HH usan `Intl` (`es-CL`) y textos de carga/exportación usan `…`.
+- [x] `/dashboard/analytics` dejó de ser placeholder: forecast HH, heatmap mensual, treemap ABC×frecuencia, anomalías y prioridades sugeridas.
+- [x] `/dashboard/graficos` dejó de ser placeholder: lectura ejecutiva automática, generador de gráficos IA vía `/api/ai/chart` y planificador semanal.
+- [x] `/dashboard/importacion` dejó de ser placeholder: plantilla XLSX descargable, dry-run/preview, diff de filas nuevas/actualizadas, mapper visible y export CSV/XLSX.
+- [x] API admin expone `/api/admin/import/template` y `/api/admin/import/preview` con validación de archivo existente.
+
+Commits principales:
+
+- `7aa15a0` — command palette + URL-driven filters.
+- `0c00098` — analytics avanzado.
+- `63e5113` — IA expandida.
+- `eecd860` — plantilla XLSX + dry-run + import workspace.
