@@ -448,7 +448,7 @@ export default function DashboardHome() {
                 setAbc(e.target.value);
                 setPage(0);
               }}
-              placeholder="A / B / C"
+              placeholder="A / B / C…"
             />
           </Field>
           <Field label="Frecuencia">
@@ -459,7 +459,7 @@ export default function DashboardHome() {
                 setFrecuencia(e.target.value);
                 setPage(0);
               }}
-              placeholder="1M, 6M, 1A"
+              placeholder="1M, 6M, 1A…"
             />
           </Field>
           <Field label="PSR / texto">
@@ -470,7 +470,7 @@ export default function DashboardHome() {
                 setQ(e.target.value);
                 setPage(0);
               }}
-              placeholder="bomba, horno, etc"
+              placeholder="bomba, horno, etc…"
             />
           </Field>
         </div>
@@ -517,7 +517,7 @@ export default function DashboardHome() {
                 className="min-w-[14rem] rounded-md border px-2 py-1.5 text-sm"
                 value={viewName}
                 onChange={(e) => setViewName(e.target.value)}
-                placeholder="Nombre de vista"
+                placeholder="Nombre de vista…"
               />
             </Field>
             <button

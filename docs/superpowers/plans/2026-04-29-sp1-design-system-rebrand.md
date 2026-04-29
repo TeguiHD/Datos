@@ -8,6 +8,8 @@
 
 **Tech Stack:** Next.js 16, TypeScript, Tailwind CSS v3, shadcn/ui, Radix UI, next-themes, Lucide React, Recharts (existente)
 
+**Estado 2026-04-29:** plan histórico ejecutado y superado. Las secciones de tareas mantienen el registro original de implementación; el estado final autoritativo está en los addendums de cierre al final del documento.
+
 ---
 
 ## File Map
@@ -37,13 +39,13 @@ apps/web/app/(dashboard)/dashboard/_components/
   ChartPanel.tsx                                        ← panel con fullscreen + export
   FilterChips.tsx                                       ← chips de filtros activos
   Pagination.tsx                                        ← paginación con páginas visibles
-  ComingSoon.tsx                                        ← placeholder para rutas SP2-SP5
+  ComingSoon.tsx                                        ← eliminado tras reemplazar placeholders por pantallas reales
 
 apps/web/app/(dashboard)/dashboard/
-  analytics/page.tsx                                    ← placeholder SP3
-  graficos/page.tsx                                     ← placeholder SP3+SP4
-  importacion/page.tsx                                  ← placeholder SP5
-  auditoria/page.tsx                                    ← placeholder (UI nueva sobre lógica existente)
+  analytics/page.tsx                                    ← implementado: forecast, heatmap, treemap, anomalías
+  graficos/page.tsx                                     ← implementado: IA gráfica + insight narrativo persistente
+  importacion/page.tsx                                  ← implementado: plantilla, dry-run, diff preview, mapper
+  auditoria/page.tsx                                    ← implementado: auditoría hash-chain
 ```
 
 ### Modificar (sin cambiar lógica)
@@ -2241,3 +2243,53 @@ Commits principales:
 - `0c00098` — analytics avanzado.
 - `63e5113` — IA expandida.
 - `eecd860` — plantilla XLSX + dry-run + import workspace.
+
+---
+
+## Auditoría de cierre 2026-04-29 — estado OK
+
+Esta sección reemplaza el estado histórico de checkboxes del cuerpo del plan. El cuerpo conserva pasos originales de implementación, pero el estado final real se valida contra código, rutas y build.
+
+### Hallazgos del análisis del plan
+
+- El plan original seguía mencionando placeholders para `/analytics`, `/graficos`, `/importacion` y `/auditoria`.
+- El addendum anterior cerraba `/analytics`, `/graficos` e `/importacion`, pero faltaba cerrar `/auditoria`.
+- El plan no contemplaba todavía el salto premium de IA narrativa persistente con memoria/hilos y explicación auditable.
+- El plan tenía checklist de tareas sin marcar porque funcionaba como plan ejecutable histórico, no como reporte final.
+
+### Correcciones finales aplicadas
+
+- [x] `/dashboard/auditoria` reemplazado por vista real de auditoría hash-chain.
+- [x] Verificación de integridad vía `/api/audit/verify` visible en UI.
+- [x] Tabla de eventos auditables con filtros por acción y límite.
+- [x] Endpoint dedicado de IA narrativa: `POST /api/ai/insights`.
+- [x] Hilos persistentes de IA: `GET /api/ai/insights/threads`.
+- [x] Memoria persistente en Prisma: `AiInsightThread` y `AiInsightMessage`.
+- [x] Migración Prisma: `20260429210000_ai_insight_threads`.
+- [x] Respuesta IA estructurada con `summary`, `findings`, `risks`, `nextActions` y `explanation.evidenceIds`.
+- [x] Fallback determinístico si Groq/OpenRouter falla.
+- [x] Registro en auditoría hash-chain con acción `AI_INSIGHT`.
+- [x] UI de `/dashboard/graficos` actualizada para generar insights auditados y continuar hilos.
+
+### Estado final por visión
+
+| Área | Estado |
+|---|---|
+| Rebrand visual + tokens + dark/density | OK |
+| Sidebar seccionado + topbar | OK |
+| Cmd+K búsqueda rápida | OK |
+| Filtros deep-link URL | OK |
+| Charts avanzados | OK inicial: forecast, heatmap, treemap, anomalías |
+| IA gráficos | OK |
+| IA narrativa persistente | OK inicial: endpoint, hilos, memoria, explicación |
+| Import/export plantilla + dry-run + diff | OK |
+| Auditoría visible | OK |
+| Build/typecheck | OK |
+
+### Pendientes fuera de SP1, no bloqueantes para OK
+
+- Mejorar IA narrativa con evaluación automática de calidad de respuesta y tests con fixtures reales.
+- Mover cuota IA de memoria a Redis si se despliega en múltiples réplicas.
+- Agregar Playwright visual regression para desktop/mobile.
+- Virtualización de tablas grandes si se muestran más de 500 filas en UI.
+- Permitir mapper de columnas editable visualmente; actualmente el mapper es visible y el backend valida plantilla estándar.

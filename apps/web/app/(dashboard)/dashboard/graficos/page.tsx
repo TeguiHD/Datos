@@ -21,7 +21,7 @@ import {
 } from 'recharts';
 import { BrainCircuit, Sparkles } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
-import type { ChartResponse, ExecutionList, ExecutionRow, PipelineResult } from '@/lib/types';
+import type { AiInsightResponse, AiInsightThread, ChartResponse, ExecutionList, ExecutionRow, PipelineResult } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { ChartPanel } from '../_components/ChartPanel';
 import { KpiCard } from '../_components/KpiCard';
@@ -42,6 +42,8 @@ const PROMPTS = [
 export default function GraficosIaPage() {
   const nowYear = new Date().getUTCFullYear();
   const [prompt, setPrompt] = useState(PROMPTS[0] ?? '');
+  const [insightPrompt, setInsightPrompt] = useState('Analiza riesgo operacional, vencidas ABC-A, HH próximas 7 días y próximos pasos.');
+  const [threadId, setThreadId] = useState<string | undefined>();
 
   const pipelineQuery = useQuery({
     queryKey: ['ai-insights-pipeline', nowYear],
@@ -58,17 +60,30 @@ export default function GraficosIaPage() {
     queryFn: () => api<ExecutionList>('/api/schedule/overdue'),
     refetchInterval: 60_000,
   });
+  const threadsQuery = useQuery({
+    queryKey: ['ai-insight-threads'],
+    queryFn: () => api<AiInsightThread[]>('/api/ai/insights/threads'),
+  });
 
   const chartMutation = useMutation({
     mutationFn: (nextPrompt: string) =>
       api<ChartResponse>('/api/ai/chart', { method: 'POST', body: JSON.stringify({ prompt: nextPrompt }) }),
+  });
+  const insightMutation = useMutation({
+    mutationFn: (payload: { prompt: string; threadId?: string }) =>
+      api<AiInsightResponse>('/api/ai/insights', { method: 'POST', body: JSON.stringify(payload) }),
+    onSuccess: (data) => {
+      setThreadId(data.threadId);
+      threadsQuery.refetch();
+    },
   });
 
   const pipeline = pipelineQuery.data;
   const upcoming = upcomingQuery.data;
   const overdue = overdueQuery.data;
 
-  const insights = useMemo(() => buildNarrativeInsights(pipeline, overdue?.rows ?? [], upcoming?.rows ?? []), [pipeline, overdue, upcoming]);
+  const localInsights = useMemo(() => buildNarrativeInsights(pipeline, overdue?.rows ?? [], upcoming?.rows ?? []), [pipeline, overdue, upcoming]);
+  const insight = insightMutation.data?.insight;
   const weeklyPlan = useMemo(() => buildWeeklyPlan(overdue?.rows ?? [], upcoming?.rows ?? []), [overdue, upcoming]);
 
   function submit(event: FormEvent) {
@@ -90,7 +105,7 @@ export default function GraficosIaPage() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard title="Vencidas críticas ABC-A" value={NUMBER_FORMAT.format(insights.criticalOverdue)} tone={insights.criticalOverdue ? 'danger' : 'ok'} loading={overdueQuery.isLoading} />
+        <KpiCard title="Vencidas críticas ABC-A" value={NUMBER_FORMAT.format(localInsights.criticalOverdue)} tone={localInsights.criticalOverdue ? 'danger' : 'ok'} loading={overdueQuery.isLoading} />
         <KpiCard title="HH próximas 7 días" value={`${HH_FORMAT.format(upcoming?.totalHh ?? 0)} HH`} tone="accent" loading={upcomingQuery.isLoading} />
         <KpiCard title="Backlog total" value={pipeline ? NUMBER_FORMAT.format(pipeline.totals.overdue) : '—'} tone="danger" loading={pipelineQuery.isLoading} />
         <KpiCard title="Cumplimiento año" value={pipeline ? `${HH_FORMAT.format(pipeline.totals.completionRate)}%` : '—'} tone="ok" loading={pipelineQuery.isLoading} />
@@ -100,14 +115,57 @@ export default function GraficosIaPage() {
         <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <div className="mb-3 flex items-center gap-2">
             <Sparkles className="size-4 text-ds-accent" />
-            <h2 className="text-sm font-semibold text-text">Lectura ejecutiva automática</h2>
+            <h2 className="text-sm font-semibold text-text">Insight narrativo auditable</h2>
           </div>
-          <div className="space-y-3">
-            {insights.messages.map((message) => (
-              <p key={message} className="rounded-lg bg-[var(--color-surface-2)] px-3 py-2 text-sm leading-6 text-text">
-                {message}
+          <div className="flex flex-col gap-3">
+            <textarea
+              value={insightPrompt}
+              onChange={(event) => setInsightPrompt(event.target.value)}
+              maxLength={500}
+              rows={3}
+              className="min-h-24 resize-none rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-text"
+              placeholder="Pide un análisis narrativo con foco en riesgo, HH, PSR o centros…"
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                onClick={() => insightMutation.mutate({ prompt: insightPrompt.trim(), threadId })}
+                disabled={insightMutation.isPending || insightPrompt.trim().length < 2}
+              >
+                {insightMutation.isPending ? 'Analizando…' : 'Generar insight auditado'}
+              </Button>
+              <select
+                value={threadId ?? ''}
+                onChange={(event) => setThreadId(event.target.value || undefined)}
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-text"
+                aria-label="Seleccionar hilo de análisis IA"
+              >
+                <option value="">Nuevo hilo</option>
+                {(threadsQuery.data ?? []).map((thread) => (
+                  <option key={thread.id} value={thread.id}>
+                    {thread.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {insightMutation.isError && (
+              <p className="rounded-lg bg-danger-dim px-3 py-2 text-sm text-danger">
+                {insightMutation.error instanceof ApiError
+                  ? (insightMutation.error.body as { message?: string })?.message ?? 'No se pudo generar el insight.'
+                  : 'No se pudo generar el insight.'}
               </p>
-            ))}
+            )}
+            {insightMutation.data ? (
+              <InsightCard result={insightMutation.data} />
+            ) : (
+              <div className="space-y-2">
+                {localInsights.messages.map((message) => (
+                  <p key={message} className="rounded-lg bg-[var(--color-surface-2)] px-3 py-2 text-sm leading-6 text-text">
+                    {message}
+                  </p>
+                ))}
+              </div>
+            )}
           </div>
         </section>
 
@@ -222,6 +280,49 @@ function AiChart({ result }: { result: ChartResponse }) {
         {result.spec.chartType === 'bar' && <Bar dataKey="value" name={metricLabel} fill="#2563eb" />}
       </Chart>
     </ResponsiveContainer>
+  );
+}
+
+function InsightCard({ result }: { result: AiInsightResponse }) {
+  return (
+    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-text">{result.insight.summary}</p>
+        <span className="rounded-md bg-accent-dim px-2 py-1 text-[11px] font-medium text-ds-accent">
+          {result._meta.model} · {result._meta.parser}
+        </span>
+      </div>
+      <InsightList title="Hallazgos" items={result.insight.findings} />
+      <InsightList title="Riesgos" items={result.insight.risks} />
+      <InsightList title="Siguientes acciones" items={result.insight.nextActions} />
+      <div className="mt-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+        <p className="text-xs font-semibold text-text">Explicación auditable</p>
+        <p className="mt-1 text-xs leading-5 text-ds-muted">{result.insight.explanation.method}</p>
+        <div className="mt-2 flex flex-wrap gap-1">
+          {result.insight.explanation.evidenceIds.map((id) => (
+            <span key={id} className="rounded bg-[var(--color-surface-2)] px-2 py-0.5 font-mono text-[11px] text-ds-muted">
+              {id}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InsightList({ title, items }: { title: string; items: string[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-3">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-ds-muted">{title}</p>
+      <ul className="mt-1 flex flex-col gap-1">
+        {items.map((item) => (
+          <li key={item} className="text-sm leading-6 text-text">
+            {item}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

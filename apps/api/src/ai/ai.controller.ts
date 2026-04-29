@@ -1,6 +1,6 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { IsString, Length } from 'class-validator';
+import { IsOptional, IsString, Length } from 'class-validator';
 import type { Request } from 'express';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -8,6 +8,7 @@ import { Roles, RolesGuard } from '../auth/guards/roles.guard';
 import { CurrentUser } from '../auth/decorators';
 import { AiSearchService } from './ai-search.service';
 import { ChartBuilderService } from './chart.service';
+import { InsightsService } from './insights.service';
 import { requestContext } from '../common/request-context';
 
 class AiSearchDto {
@@ -18,6 +19,11 @@ class AiChartDto {
   @IsString() @Length(2, 500) prompt!: string;
 }
 
+class AiInsightDto {
+  @IsOptional() @IsString() @Length(2, 500) prompt?: string;
+  @IsOptional() @IsString() @Length(5, 80) threadId?: string;
+}
+
 @Controller('ai')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.SUPERADMIN, Role.ADMIN, Role.EDITOR, Role.VIEWER)
@@ -25,6 +31,7 @@ export class AiController {
   constructor(
     private ai: AiSearchService,
     private chart: ChartBuilderService,
+    private insights: InsightsService,
   ) {}
 
   @Post('search')
@@ -45,5 +52,20 @@ export class AiController {
     @Req() req: Request,
   ) {
     return this.chart.build(u, body.prompt, requestContext(req));
+  }
+
+  @Get('insights/threads')
+  threads(@CurrentUser() u: { id: string }) {
+    return this.insights.listThreads(u.id);
+  }
+
+  @Post('insights')
+  @Throttle({ default: { ttl: 60_000, limit: 6 } })
+  buildInsight(
+    @CurrentUser() u: { id: string; role: Role },
+    @Body() body: AiInsightDto,
+    @Req() req: Request,
+  ) {
+    return this.insights.generate(u, body, requestContext(req));
   }
 }

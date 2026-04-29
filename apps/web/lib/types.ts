@@ -175,3 +175,37 @@ export interface ChartResponse {
   total: { value: number; count: number };
   _meta: { model: string; latencyMs: number; parser: 'llm' | 'heuristic' };
 }
+
+export interface AiInsight {
+  summary: string;
+  findings: string[];
+  risks: string[];
+  nextActions: string[];
+  explanation: {
+    method: string;
+    evidenceIds: string[];
+  };
+}
+
+export interface AiInsightResponse {
+  threadId: string;
+  messageId: string;
+  insight: AiInsight;
+  snapshot: unknown;
+  _meta: { model: string; latencyMs: number; parser: 'llm' | 'heuristic' };
+}
+
+export interface AiInsightThread {
+  id: string;
+  title: string;
+  context: unknown;
+  createdAt: string;
+  updatedAt: string;
+  messages: Array<{
+    id: string;
+    role: string;
+    content: unknown;
+    model: string | null;
+    createdAt: string;
+  }>;
+}

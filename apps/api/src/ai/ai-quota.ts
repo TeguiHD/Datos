@@ -11,14 +11,14 @@ interface Bucket {
   count: number;
 }
 
-export type AiAction = 'search' | 'chart';
+export type AiAction = 'search' | 'chart' | 'insight';
 
 const WINDOW_MS = 60 * 60 * 1000; // 1h
 const LIMITS: Record<Role, Record<AiAction, number>> = {
-  SUPERADMIN: { search: 400, chart: 200 },
-  ADMIN: { search: 300, chart: 150 },
-  EDITOR: { search: 200, chart: 100 },
-  VIEWER: { search: 80, chart: 30 },
+  SUPERADMIN: { search: 400, chart: 200, insight: 120 },
+  ADMIN: { search: 300, chart: 150, insight: 80 },
+  EDITOR: { search: 200, chart: 100, insight: 50 },
+  VIEWER: { search: 80, chart: 30, insight: 15 },
 };
 
 @Injectable()

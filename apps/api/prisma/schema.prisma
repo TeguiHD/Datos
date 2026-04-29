@@ -40,6 +40,7 @@ model User {
   sessions        Session[]
   auditLogs       AuditLog[]
   savedViews      ScheduleSavedView[]
+  aiInsightThreads AiInsightThread[]
 
   @@index([role])
 }
@@ -55,6 +56,31 @@ model ScheduleSavedView {
 
   @@unique([userId, name])
   @@index([userId, updatedAt])
+}
+
+model AiInsightThread {
+  id        String             @id @default(cuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  context   Json
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  messages  AiInsightMessage[]
+
+  @@index([userId, updatedAt])
+}
+
+model AiInsightMessage {
+  id        String          @id @default(cuid())
+  threadId  String
+  thread    AiInsightThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  role      String
+  content   Json
+  model     String?
+  createdAt DateTime        @default(now())
+
+  @@index([threadId, createdAt])
 }
 
 model Session {
