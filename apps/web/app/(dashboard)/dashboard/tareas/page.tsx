@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { api, ApiError } from '@/lib/api';
@@ -25,10 +26,25 @@ interface TaskList {
 }
 
 export default function TareasPage() {
-  const [q, setQ] = useState('');
-  const [abc, setAbc] = useState('');
-  const [year, setYear] = useState<number | ''>('');
-  const [month, setMonth] = useState<number | ''>('');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [q, setQ] = useState(() => searchParams.get('q') ?? '');
+  const [abc, setAbc] = useState(() => searchParams.get('abc') ?? '');
+  const [year, setYear] = useState<number | ''>(() => readNumberFilter(searchParams.get('year'), 2000, 2100));
+  const [month, setMonth] = useState<number | ''>(() => readNumberFilter(searchParams.get('month'), 1, 12));
+
+  const urlParams = useMemo(() => {
+    const params = new URLSearchParams();
+    if (q.trim()) params.set('q', q.trim());
+    if (abc.trim()) params.set('abc', abc.trim());
+    if (year) params.set('year', String(year));
+    if (month) params.set('month', String(month));
+    return params.toString();
+  }, [abc, month, q, year]);
+
+  useEffect(() => {
+    router.replace(urlParams ? `/dashboard/tareas?${urlParams}` : '/dashboard/tareas', { scroll: false });
+  }, [router, urlParams]);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['tasks', q, abc, year, month],
@@ -60,7 +76,7 @@ export default function TareasPage() {
 
       <div className="flex flex-wrap items-end gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
         <Field label="Buscar">
-          <input value={q} onChange={(e) => setQ(e.target.value)} className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-text" placeholder="descripción, equipo..." />
+          <input value={q} onChange={(e) => setQ(e.target.value)} className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-text" placeholder="descripción, equipo…" />
         </Field>
         <Field label="ABC">
           <select value={abc} onChange={(e) => setAbc(e.target.value)} className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-text">
@@ -143,4 +159,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       {children}
     </label>
   );
+}
+
+function readNumberFilter(value: string | null, min: number, max: number): number | '' {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '';
+  const parsed = Math.trunc(n);
+  return parsed >= min && parsed <= max ? parsed : '';
 }

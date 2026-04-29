@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '@/lib/api';
 import type {
@@ -36,6 +37,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ChartPanel } from './_components/ChartPanel';
 import { FilterChips } from './_components/FilterChips';
 import { KpiCard } from './_components/KpiCard';
@@ -62,7 +64,19 @@ type SortField =
   | 'centroPlanificacion';
 type GroupField = ExecutionGroupResult['groupBy'];
 
-const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const DATE_FORMAT = new Intl.DateTimeFormat('es-CL', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  timeZone: 'America/Santiago',
+});
+const MONTH_YEAR_FORMAT = new Intl.DateTimeFormat('es-CL', {
+  month: 'short',
+  year: '2-digit',
+  timeZone: 'UTC',
+});
+const NUMBER_FORMAT = new Intl.NumberFormat('es-CL');
+const HH_FORMAT = new Intl.NumberFormat('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 const SORT_OPTIONS: { value: SortField; label: string }[] = [
   { value: 'dueDate', label: 'Periodo' },
@@ -86,27 +100,30 @@ const GROUP_OPTIONS: { value: GroupField; label: string }[] = [
 export default function DashboardHome() {
   const nowYear = new Date().getUTCFullYear();
   const qc = useQueryClient();
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const [yearFrom, setYearFrom] = useState(nowYear - 1);
-  const [monthFrom, setMonthFrom] = useState(1);
-  const [yearTo, setYearTo] = useState(nowYear);
-  const [monthTo, setMonthTo] = useState(12);
-  const [status, setStatus] = useState<ExecStatus | ''>('');
-  const [abc, setAbc] = useState('');
-  const [frecuencia, setFrecuencia] = useState('');
-  const [psr, setPsr] = useState('');
-  const [centroPlanificacion, setCentroPlanificacion] = useState('');
-  const [q, setQ] = useState('');
+  const [yearFrom, setYearFrom] = useState(() => readInt(searchParams, 'yearFrom', nowYear - 1, 2000, 2100));
+  const [monthFrom, setMonthFrom] = useState(() => readInt(searchParams, 'monthFrom', 1, 1, 12));
+  const [yearTo, setYearTo] = useState(() => readInt(searchParams, 'yearTo', nowYear, 2000, 2100));
+  const [monthTo, setMonthTo] = useState(() => readInt(searchParams, 'monthTo', 12, 1, 12));
+  const [status, setStatus] = useState<ExecStatus | ''>(() => readStatus(searchParams.get('status')));
+  const [abc, setAbc] = useState(() => searchParams.get('abc') ?? '');
+  const [frecuencia, setFrecuencia] = useState(() => searchParams.get('frecuencia') ?? '');
+  const [psr, setPsr] = useState(() => searchParams.get('psr') ?? '');
+  const [centroPlanificacion, setCentroPlanificacion] = useState(() => searchParams.get('centroPlanificacion') ?? '');
+  const [q, setQ] = useState(() => searchParams.get('q') ?? '');
 
-  const [groupBy, setGroupBy] = useState<GroupField>('status');
-  const [sortBy, setSortBy] = useState<SortField>('dueDate');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-  const [take, setTake] = useState(25);
-  const [page, setPage] = useState(0);
+  const [groupBy, setGroupBy] = useState<GroupField>(() => readGroup(searchParams.get('groupBy')));
+  const [sortBy, setSortBy] = useState<SortField>(() => readSort(searchParams.get('sortBy')));
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => (searchParams.get('sortDir') === 'desc' ? 'desc' : 'asc'));
+  const [take, setTake] = useState(() => readInt(searchParams, 'take', 25, 1, 500));
+  const [page, setPage] = useState(() => readInt(searchParams, 'page', 1, 1, 9999) - 1);
   const [selectedViewId, setSelectedViewId] = useState('');
   const [viewName, setViewName] = useState('');
   const [exporting, setExporting] = useState<'csv' | 'xlsx' | null>(null);
   const [actionsError, setActionsError] = useState<string | null>(null);
+  const [viewToDelete, setViewToDelete] = useState<SavedExecutionView | null>(null);
 
   const baseParams = useMemo(
     () =>
@@ -139,6 +156,20 @@ export default function DashboardHome() {
     next.set('groupBy', groupBy);
     return next.toString();
   }, [baseParams, groupBy]);
+
+  const dashboardUrlParams = useMemo(() => {
+    const next = new URLSearchParams(baseParams);
+    next.set('groupBy', groupBy);
+    next.set('sortBy', sortBy);
+    next.set('sortDir', sortDir);
+    next.set('take', String(take));
+    next.set('page', String(page + 1));
+    return next.toString();
+  }, [baseParams, groupBy, page, sortBy, sortDir, take]);
+
+  useEffect(() => {
+    router.replace(`/dashboard?${dashboardUrlParams}`, { scroll: false });
+  }, [dashboardUrlParams, router]);
 
   const currentViewFilters = useMemo<ExecutionViewFilters>(
     () => ({
@@ -233,6 +264,7 @@ export default function DashboardHome() {
     mutationFn: (id: string) => api<{ ok: boolean; id: string }>(`/api/schedule/views/${id}`, { method: 'DELETE' }),
     onSuccess: (_, id) => {
       if (selectedViewId === id) setSelectedViewId('');
+      setViewToDelete(null);
       setActionsError(null);
       qc.invalidateQueries({ queryKey: ['schedule-views'] });
     },
@@ -317,7 +349,7 @@ export default function DashboardHome() {
           <h1 className="text-xl sm:text-2xl font-semibold text-slate-900">Mantenciones · tablero en tiempo real</h1>
         </div>
         <p className="text-xs text-slate-500">
-          {new Date().toISOString().slice(0, 10)} · refresco automático 60s
+          {DATE_FORMAT.format(new Date())} · refresco automático 60s
         </p>
       </div>
 
@@ -469,10 +501,13 @@ export default function DashboardHome() {
             <button
               type="button"
               disabled={!selectedViewId || deleteViewMutation.isPending}
-              onClick={() => deleteViewMutation.mutate(selectedViewId)}
+              onClick={() => {
+                const selected = savedViews.find((view) => view.id === selectedViewId);
+                if (selected) setViewToDelete(selected);
+              }}
               className="rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-sm text-red-800 disabled:opacity-50"
             >
-              {deleteViewMutation.isPending ? 'Eliminando...' : 'Eliminar vista'}
+              {deleteViewMutation.isPending ? 'Eliminando…' : 'Eliminar vista'}
             </button>
           </div>
 
@@ -498,7 +533,7 @@ export default function DashboardHome() {
               }}
               className="rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm text-blue-900 disabled:opacity-50"
             >
-              {saveViewMutation.isPending ? 'Guardando...' : 'Guardar'}
+              {saveViewMutation.isPending ? 'Guardando…' : 'Guardar'}
             </button>
           </div>
 
@@ -509,7 +544,7 @@ export default function DashboardHome() {
               onClick={() => exportExecutions('csv')}
               className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
             >
-              {exporting === 'csv' ? 'Exportando CSV...' : 'Exportar CSV'}
+              {exporting === 'csv' ? 'Exportando CSV…' : 'Exportar CSV'}
             </button>
             <button
               type="button"
@@ -517,7 +552,7 @@ export default function DashboardHome() {
               onClick={() => exportExecutions('xlsx')}
               className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
             >
-              {exporting === 'xlsx' ? 'Exportando XLSX...' : 'Exportar XLSX'}
+              {exporting === 'xlsx' ? 'Exportando XLSX…' : 'Exportar XLSX'}
             </button>
           </div>
         </div>
@@ -692,9 +727,9 @@ export default function DashboardHome() {
                   {grouped.rows.slice(0, 12).map((row) => (
                     <tr key={row.key} className="border-t">
                       <td className="px-3 py-2">{row.key}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{row.count}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{row.totalHhPlanned.toFixed(1)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{row.totalHhActual.toFixed(1)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{NUMBER_FORMAT.format(row.count)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{HH_FORMAT.format(row.totalHhPlanned)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{HH_FORMAT.format(row.totalHhActual)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -712,8 +747,8 @@ export default function DashboardHome() {
             <h2 className="font-medium">Tabla dinámica de ejecuciones</h2>
             <p className="text-xs text-slate-500">
               {executions
-                ? `${firstRow}–${lastRow} de ${totalRows} · HH plan ${executions.totalHhPlanned.toFixed(1)} · HH real ${executions.totalHhActual.toFixed(1)}`
-                : 'Cargando...'}
+                ? `${NUMBER_FORMAT.format(firstRow)}–${NUMBER_FORMAT.format(lastRow)} de ${NUMBER_FORMAT.format(totalRows)} · HH plan ${HH_FORMAT.format(executions.totalHhPlanned)} · HH real ${HH_FORMAT.format(executions.totalHhActual)}`
+                : 'Cargando…'}
             </p>
           </div>
           <div className="flex gap-2 items-center">
@@ -826,6 +861,33 @@ export default function DashboardHome() {
           <p className="text-sm text-slate-500 py-8 text-center">No hay ejecuciones para los filtros seleccionados.</p>
         )}
       </div>
+
+      <Dialog open={Boolean(viewToDelete)} onOpenChange={(open) => !open && setViewToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Eliminar vista guardada</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-ds-muted">
+            <p>
+              Vas a eliminar la vista{' '}
+              <span className="font-semibold text-text">{viewToDelete?.name}</span>. Esta acción no se puede deshacer.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setViewToDelete(null)}>
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={!viewToDelete || deleteViewMutation.isPending}
+                onClick={() => viewToDelete && deleteViewMutation.mutate(viewToDelete.id)}
+              >
+                {deleteViewMutation.isPending ? 'Eliminando…' : 'Eliminar definitivamente'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -859,8 +921,8 @@ function DynamicRow({
       <td className="px-3 py-2">{row.task.psr ?? '—'}</td>
       <td className="px-3 py-2">{row.task.frecuenciaCodigo ?? '—'}</td>
       <td className="px-3 py-2">{row.task.centroPlanificacion ?? '—'}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{Number(row.hhPlanned).toFixed(1)}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{Number(row.hhActual ?? 0).toFixed(1)}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{formatHh(row.hhPlanned)}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{formatHh(row.hhActual ?? 0)}</td>
       <td className="px-3 py-2">
         <StatusBadge status={row.status} />
       </td>
@@ -915,7 +977,7 @@ function MobileExecCard({
         <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono">{formatPeriod(row.dueDate)}</span>
         <span className="rounded-md bg-slate-100 px-2 py-0.5">ABC {row.task.indicadorAbc ?? '—'}</span>
         <span className="rounded-md bg-slate-100 px-2 py-0.5">{row.task.frecuenciaCodigo ?? '—'}</span>
-        <span className="rounded-md bg-slate-100 px-2 py-0.5">{Number(row.hhPlanned).toFixed(1)} HH</span>
+        <span className="rounded-md bg-slate-100 px-2 py-0.5">{formatHh(row.hhPlanned)} HH</span>
         {row.task.psr && <span className="rounded-md bg-slate-100 px-2 py-0.5 truncate max-w-[8rem]">PSR {row.task.psr}</span>}
       </div>
       <div className="flex gap-2">
@@ -953,7 +1015,30 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function formatPeriod(iso: string): string {
   const d = new Date(iso);
-  return `${MONTHS[d.getUTCMonth()]}-${d.getUTCFullYear().toString().slice(-2)}`;
+  return MONTH_YEAR_FORMAT.format(d).replace('.', '');
+}
+
+function formatHh(value: string | number | null): string {
+  return HH_FORMAT.format(Number(value ?? 0));
+}
+
+function readInt(params: URLSearchParams, key: string, fallback: number, min: number, max: number): number {
+  const value = Number(params.get(key));
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(value)));
+}
+
+function readStatus(value: string | null): ExecStatus | '' {
+  if (value === 'PENDING' || value === 'DONE' || value === 'OVERDUE' || value === 'SKIPPED') return value;
+  return '';
+}
+
+function readSort(value: string | null): SortField {
+  return SORT_OPTIONS.some((option) => option.value === value) ? (value as SortField) : 'dueDate';
+}
+
+function readGroup(value: string | null): GroupField {
+  return GROUP_OPTIONS.some((option) => option.value === value) ? (value as GroupField) : 'status';
 }
 
 function buildParams(input: Record<string, string | number | undefined>): string {
