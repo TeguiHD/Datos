@@ -27,7 +27,20 @@ import {
   YAxis,
 } from 'recharts';
 import { UpcomingWeekWidget } from './_components/UpcomingWeekWidget';
-import { ChevronDown, Filter as FilterIcon } from 'lucide-react';
+import { ChevronDown, Filter as FilterIcon, MoreHorizontal } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { ChartPanel } from './_components/ChartPanel';
+import { FilterChips } from './_components/FilterChips';
+import { KpiCard } from './_components/KpiCard';
+import { Pagination } from './_components/Pagination';
+import { StatusBadge } from './_components/StatusBadge';
 
 interface Kpis {
   taskCount: number;
@@ -296,9 +309,6 @@ export default function DashboardHome() {
   const totalRows = executions?.total ?? 0;
   const firstRow = totalRows === 0 ? 0 : page * take + 1;
   const lastRow = Math.min((page + 1) * take, totalRows);
-  const canPrev = page > 0;
-  const canNext = (page + 1) * take < totalRows;
-
   return (
     <div className="space-y-6 fade-up">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-baseline sm:justify-between">
@@ -518,13 +528,55 @@ export default function DashboardHome() {
         {actionsError && <p className="mt-2 text-xs text-red-700">{actionsError}</p>}
       </details>
 
+      <FilterChips
+        chips={[
+          ...(status
+            ? [{ key: 'status', label: 'Estado', value: status, onRemove: () => { setStatus(''); setPage(0); } }]
+            : []),
+          ...(abc.trim()
+            ? [{ key: 'abc', label: 'ABC', value: abc.trim(), onRemove: () => { setAbc(''); setPage(0); } }]
+            : []),
+          ...(frecuencia.trim()
+            ? [{
+                key: 'frecuencia',
+                label: 'Frecuencia',
+                value: frecuencia.trim(),
+                onRemove: () => { setFrecuencia(''); setPage(0); },
+              }]
+            : []),
+          ...(psr.trim()
+            ? [{ key: 'psr', label: 'PSR', value: psr.trim(), onRemove: () => { setPsr(''); setPage(0); } }]
+            : []),
+          ...(centroPlanificacion.trim()
+            ? [{
+                key: 'centro',
+                label: 'Centro',
+                value: centroPlanificacion.trim(),
+                onRemove: () => { setCentroPlanificacion(''); setPage(0); },
+              }]
+            : []),
+          ...(q.trim()
+            ? [{ key: 'q', label: 'Texto', value: q.trim(), onRemove: () => { setQ(''); setPage(0); } }]
+            : []),
+        ]}
+        onClearAll={() => {
+          setStatus('');
+          setAbc('');
+          setFrecuencia('');
+          setPsr('');
+          setCentroPlanificacion('');
+          setQ('');
+          setPage(0);
+        }}
+      />
+
       <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 md:grid-cols-6">
-        <Card title="Tareas catálogo" value={kpis?.taskCount ?? '—'} loading={kpisQuery.isLoading} />
-        <Card title="Pendientes" value={pipeline?.totals.pending ?? '—'} tone="warn" loading={pipelineQuery.isLoading} />
-        <Card title="Vencidas" value={pipeline?.totals.overdue ?? '—'} tone="danger" loading={pipelineQuery.isLoading} />
-        <Card title="Hechas" value={pipeline?.totals.done ?? '—'} tone="ok" loading={pipelineQuery.isLoading} />
-        <Card title="Omitidas" value={pipeline?.totals.skipped ?? '—'} loading={pipelineQuery.isLoading} />
-        <Card
+        <KpiCard title="Tareas catálogo" value={kpis?.taskCount ?? '—'} loading={kpisQuery.isLoading} tone="accent" />
+        <KpiCard title="Pendientes" value={pipeline?.totals.pending ?? '—'} tone="warn" loading={pipelineQuery.isLoading} />
+        <KpiCard title="Vencidas" value={pipeline?.totals.overdue ?? '—'} tone="danger" loading={pipelineQuery.isLoading} />
+        <KpiCard title="Hechas" value={pipeline?.totals.done ?? '—'} tone="ok" loading={pipelineQuery.isLoading} />
+        <KpiCard title="Omitidas" value={pipeline?.totals.skipped ?? '—'} loading={pipelineQuery.isLoading} />
+        <KpiCard
           title="Cumplimiento"
           value={pipeline ? `${pipeline.totals.completionRate.toFixed(1)}%` : '—'}
           tone="ok"
@@ -533,14 +585,14 @@ export default function DashboardHome() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card title="Discrepancias" value={pipeline?.process.discrepancyCount ?? kpis?.discCount ?? '—'} tone="warn" loading={pipelineQuery.isLoading} />
-        <Card title="Imports total" value={pipeline?.process.imports.total ?? '—'} loading={pipelineQuery.isLoading} />
-        <Card title="Imports parciales" value={pipeline?.process.imports.partial ?? '—'} tone="warn" loading={pipelineQuery.isLoading} />
-        <Card title="Rebuilds período" value={pipeline?.process.rebuildRuns ?? '—'} loading={pipelineQuery.isLoading} />
+        <KpiCard title="Discrepancias" value={pipeline?.process.discrepancyCount ?? kpis?.discCount ?? '—'} tone="warn" loading={pipelineQuery.isLoading} />
+        <KpiCard title="Imports total" value={pipeline?.process.imports.total ?? '—'} loading={pipelineQuery.isLoading} />
+        <KpiCard title="Imports parciales" value={pipeline?.process.imports.partial ?? '—'} tone="warn" loading={pipelineQuery.isLoading} />
+        <KpiCard title="Rebuilds período" value={pipeline?.process.rebuildRuns ?? '—'} loading={pipelineQuery.isLoading} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <ChartPanel title="Carga HH por mes" subtitle="Planificadas vs reales">
+        <ChartPanel title="Carga HH por mes" subtitle="Planificadas vs reales" loading={pipelineQuery.isLoading}>
           <ResponsiveContainer width="100%" height={260}>
             <AreaChart data={chartRows}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -554,7 +606,7 @@ export default function DashboardHome() {
           </ResponsiveContainer>
         </ChartPanel>
 
-        <ChartPanel title="Estado por mes" subtitle="Pipeline operacional">
+        <ChartPanel title="Estado por mes" subtitle="Pipeline operacional" loading={pipelineQuery.isLoading}>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={chartRows}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -570,7 +622,7 @@ export default function DashboardHome() {
           </ResponsiveContainer>
         </ChartPanel>
 
-        <ChartPanel title="Backlog vs cerrado" subtitle="Seguimiento de proceso">
+        <ChartPanel title="Backlog vs cerrado" subtitle="Seguimiento de proceso" loading={pipelineQuery.isLoading}>
           <ResponsiveContainer width="100%" height={260}>
             <LineChart data={chartRows}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -584,7 +636,7 @@ export default function DashboardHome() {
           </ResponsiveContainer>
         </ChartPanel>
 
-        <ChartPanel title="Distribución ABC" subtitle="Ejecuciones filtradas">
+        <ChartPanel title="Distribución ABC" subtitle="Ejecuciones filtradas" loading={pipelineQuery.isLoading}>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={pipeline?.abcSplit ?? []}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -596,7 +648,7 @@ export default function DashboardHome() {
           </ResponsiveContainer>
         </ChartPanel>
 
-        <ChartPanel title="Distribución Frecuencia" subtitle="Ejecuciones filtradas">
+        <ChartPanel title="Distribución Frecuencia" subtitle="Ejecuciones filtradas" loading={pipelineQuery.isLoading}>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={pipeline?.freqSplit ?? []}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -768,77 +820,12 @@ export default function DashboardHome() {
                 />
               ))}
             </div>
-            <div className="flex items-center justify-between border-t px-4 py-3">
-              <span className="text-xs text-slate-500">
-                Página {page + 1} · rango {firstRow}-{lastRow}
-              </span>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  disabled={!canPrev}
-                  onClick={() => setPage((p) => Math.max(0, p - 1))}
-                  className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-                >
-                  Anterior
-                </button>
-                <button
-                  type="button"
-                  disabled={!canNext}
-                  onClick={() => setPage((p) => p + 1)}
-                  className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-                >
-                  Siguiente
-                </button>
-              </div>
-            </div>
+            <Pagination page={page} take={take} total={totalRows} onPage={setPage} />
           </>
         ) : (
           <p className="text-sm text-slate-500 py-8 text-center">No hay ejecuciones para los filtros seleccionados.</p>
         )}
       </div>
-    </div>
-  );
-}
-
-function Card({
-  title,
-  value,
-  tone,
-  loading,
-}: {
-  title: string;
-  value: number | string;
-  tone?: 'danger' | 'warn' | 'ok';
-  loading?: boolean;
-}) {
-  const ring =
-    tone === 'danger'
-      ? 'border-rose-300 bg-gradient-to-br from-rose-50 to-white'
-      : tone === 'warn'
-        ? 'border-amber-300 bg-gradient-to-br from-amber-50 to-white'
-        : tone === 'ok'
-          ? 'border-emerald-300 bg-gradient-to-br from-emerald-50 to-white'
-          : 'border-slate-200 bg-white';
-  return (
-    <div
-      className={`min-w-[150px] shrink-0 snap-start rounded-xl border p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm sm:min-w-0 sm:shrink ${ring}`}
-    >
-      <div className="text-[11px] uppercase tracking-wide text-slate-500">{title}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">
-        {loading ? <span className="skeleton inline-block h-8 w-20 rounded-md" /> : value}
-      </div>
-    </div>
-  );
-}
-
-function ChartPanel({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border bg-white p-4">
-      <div className="mb-2">
-        <h2 className="font-medium">{title}</h2>
-        <p className="text-xs text-slate-500">{subtitle}</p>
-      </div>
-      {children}
     </div>
   );
 }
@@ -875,27 +862,30 @@ function DynamicRow({
       <td className="px-3 py-2 text-right tabular-nums">{Number(row.hhPlanned).toFixed(1)}</td>
       <td className="px-3 py-2 text-right tabular-nums">{Number(row.hhActual ?? 0).toFixed(1)}</td>
       <td className="px-3 py-2">
-        <StatusPill status={row.status} />
+        <StatusBadge status={row.status} />
       </td>
       <td className="px-3 py-2 text-right">
-        <div className="inline-flex gap-1">
-          <button
-            type="button"
-            disabled={busy || row.status === 'DONE'}
-            onClick={onDone}
-            className="rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs text-emerald-800 disabled:opacity-50"
-          >
-            Hecha
-          </button>
-          <button
-            type="button"
-            disabled={busy || row.status === 'SKIPPED'}
-            onClick={onSkip}
-            className="rounded-md border border-slate-300 bg-slate-100 px-2 py-1 text-xs text-slate-700 disabled:opacity-50"
-          >
-            Omitir
-          </button>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="size-7" disabled={busy} aria-label="Acciones">
+              <MoreHorizontal className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuGroup>
+              <DropdownMenuItem
+                disabled={busy || row.status === 'DONE'}
+                onClick={onDone}
+                className="text-ok focus:bg-ok-dim focus:text-ok"
+              >
+                Marcar hecha
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={busy || row.status === 'SKIPPED'} onClick={onSkip}>
+                Omitir
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </td>
     </tr>
   );
@@ -919,7 +909,7 @@ function MobileExecCard({
         <p className="min-w-0 truncate text-sm font-semibold text-slate-900" title={desc}>
           {desc}
         </p>
-        <StatusPill status={row.status} />
+        <StatusBadge status={row.status} />
       </div>
       <div className="flex flex-wrap gap-1.5 text-[11px] text-slate-600">
         <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono">{formatPeriod(row.dueDate)}</span>
@@ -929,41 +919,27 @@ function MobileExecCard({
         {row.task.psr && <span className="rounded-md bg-slate-100 px-2 py-0.5 truncate max-w-[8rem]">PSR {row.task.psr}</span>}
       </div>
       <div className="flex gap-2">
-        <button
+        <Button
           type="button"
+          variant="outline"
           disabled={busy || row.status === 'DONE'}
           onClick={onDone}
-          className="flex-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1.5 text-xs font-medium text-emerald-800 disabled:opacity-50"
+          className="flex-1 border-ok/30 bg-ok-dim text-xs font-medium text-ok hover:bg-ok-dim/80 hover:text-ok disabled:opacity-50"
         >
           Hecha
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="outline"
           disabled={busy || row.status === 'SKIPPED'}
           onClick={onSkip}
-          className="flex-1 rounded-md border border-slate-300 bg-slate-100 px-2 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-50"
+          className="flex-1 text-xs font-medium disabled:opacity-50"
         >
           Omitir
-        </button>
+        </Button>
       </div>
     </div>
   );
-}
-
-function StatusPill({ status }: { status: ExecStatus }) {
-  const cls = {
-    PENDING: 'bg-amber-100 text-amber-800',
-    OVERDUE: 'bg-red-100 text-red-800',
-    DONE: 'bg-emerald-100 text-emerald-800',
-    SKIPPED: 'bg-slate-200 text-slate-700',
-  }[status];
-  const label = {
-    PENDING: 'Pendiente',
-    OVERDUE: 'Vencida',
-    DONE: 'Hecha',
-    SKIPPED: 'Omitida',
-  }[status];
-  return <span className={`rounded px-2 py-0.5 text-xs ${cls}`}>{label}</span>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
