@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Download, FileSpreadsheet, UploadCloud } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { KpiCard } from '../_components/KpiCard';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -47,20 +48,30 @@ interface ImportRun {
   createdAt: string;
 }
 
-const MAPPING = [
-  ['PSR', 'psr'],
-  ['Centro planificación', 'centroPlanificacion'],
-  ['Indicador ABC', 'indicadorAbc'],
-  ['Frecuencia', 'frecuenciaCodigo / frecuenciaMeses'],
-  ['HH Real', 'hhReal'],
-  ['ene-26, feb-26…', 'MonthlySchedule por mes'],
-];
+const INTERNAL_FIELDS = [
+  { value: 'psr', label: 'psr — Responsable' },
+  { value: 'centroPlanificacion', label: 'centroPlanificacion' },
+  { value: 'indicadorAbc', label: 'indicadorAbc — ABC' },
+  { value: 'frecuenciaCodigo', label: 'frecuenciaCodigo / frecuenciaMeses' },
+  { value: 'hhReal', label: 'hhReal — HH reales' },
+  { value: 'schedule', label: 'Cronograma mensual (ene-26, feb-26…)' },
+] as const;
+
+const DEFAULT_MAPPING: Record<string, string> = {
+  PSR: 'psr',
+  'Centro planificación': 'centroPlanificacion',
+  'Indicador ABC': 'indicadorAbc',
+  Frecuencia: 'frecuenciaCodigo',
+  'HH Real': 'hhReal',
+  'ene-26, feb-26…': 'schedule',
+};
 
 export default function ImportacionPage() {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [busy, setBusy] = useState<'preview' | 'import' | 'template' | 'export' | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>(DEFAULT_MAPPING);
 
   const runsQuery = useQuery({
     queryKey: ['imports'],
@@ -190,23 +201,51 @@ export default function ImportacionPage() {
         </div>
 
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-          <div className="mb-3 flex items-center gap-2">
-            <FileSpreadsheet className="size-5 text-ds-accent" />
-            <h2 className="text-sm font-semibold text-text">Mapper de columnas esperado</h2>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <FileSpreadsheet className="size-5 text-ds-accent" />
+              <h2 className="text-sm font-semibold text-text">Mapper de columnas</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setColumnMapping(DEFAULT_MAPPING)}
+              className="text-xs text-ds-muted underline-offset-2 hover:underline"
+            >
+              Restablecer
+            </button>
           </div>
+          <p className="mb-3 text-xs text-ds-muted">
+            Ajusta qué columna de tu Excel corresponde a cada campo interno antes de hacer el dry-run.
+          </p>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead className="bg-[var(--color-surface-2)] text-ds-muted">
                 <tr>
-                  <th className="px-3 py-2 text-left">Columna plantilla</th>
+                  <th className="px-3 py-2 text-left">Columna Excel</th>
                   <th className="px-3 py-2 text-left">Campo interno</th>
                 </tr>
               </thead>
               <tbody>
-                {MAPPING.map(([source, target]) => (
+                {Object.keys(DEFAULT_MAPPING).map((source) => (
                   <tr key={source} className="border-t border-[var(--color-border)]">
                     <td className="px-3 py-2 font-medium text-text">{source}</td>
-                    <td className="px-3 py-2 font-mono text-xs text-ds-muted">{target}</td>
+                    <td className="px-3 py-2">
+                      <Select
+                        value={columnMapping[source] ?? ''}
+                        onValueChange={(value) => setColumnMapping((prev) => ({ ...prev, [source]: value }))}
+                      >
+                        <SelectTrigger className="h-7 w-full text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {INTERNAL_FIELDS.map((field) => (
+                            <SelectItem key={field.value} value={field.value} className="text-xs">
+                              {field.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -222,6 +261,9 @@ export default function ImportacionPage() {
               <h2 className="text-sm font-semibold text-text">Diff preview</h2>
               <p className="text-xs text-ds-muted">
                 {preview.filename} · hash {preview.fileHash.slice(0, 12)} · {NUMBER_FORMAT.format(preview.totalRows)} filas válidas
+              </p>
+              <p className="mt-1 text-xs text-ds-muted">
+                Mostrando {NUMBER_FORMAT.format(preview.sample.length)} de {NUMBER_FORMAT.format(preview.totalRows)} filas
               </p>
             </div>
             {preview.duplicateRowsInFile > 0 && (

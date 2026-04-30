@@ -38,6 +38,8 @@ const STATUS_LABELS = {
 
 const HEATMAP_STATUSES = ['OVERDUE', 'PENDING', 'DONE', 'SKIPPED'] as const;
 const HEATMAP_COLORS = ['#eff6ff', '#bfdbfe', '#60a5fa', '#2563eb', '#1e3a8a'];
+// Relative luminance threshold — colors above 0.35 get dark text
+const HEATMAP_DARK_TEXT = new Set(['#eff6ff', '#bfdbfe', '#60a5fa', '#e2e8f0']);
 
 export default function AnalyticsPage() {
   const now = new Date();
@@ -165,8 +167,8 @@ export default function AnalyticsPage() {
                       return (
                         <td
                           key={`${status}-${row.year}-${row.month}`}
-                          className="h-9 min-w-16 rounded-md text-center font-mono text-xs text-white"
-                          style={{ backgroundColor: heatColor(value, maxStatusValue(monthRows, statusKey)) }}
+                          className="h-9 min-w-16 rounded-md text-center font-mono text-xs"
+                          style={{ backgroundColor: heatColor(value, maxStatusValue(monthRows, statusKey)), color: heatTextColor(value, maxStatusValue(monthRows, statusKey)) }}
                           title={`${STATUS_LABELS[status]} ${row.period}: ${NUMBER_FORMAT.format(value)}`}
                         >
                           {value > 0 ? NUMBER_FORMAT.format(value) : ''}
@@ -301,7 +303,10 @@ function buildForecast(rows: Array<PipelineMonthPoint & { period: string }>) {
       forecastHh: Math.max(0, avg + trend * (index + 1)),
     };
   });
-  return [...rows.map((row) => ({ ...row, forecastHh: null })), ...forecast];
+  return [
+    ...rows.map((row, index) => ({ ...row, forecastHh: index === rows.length - 1 ? row.plannedHh : null })),
+    ...forecast,
+  ];
 }
 
 function buildAnomalies(rows: Array<PipelineMonthPoint & { period: string }>, executions: ExecutionRow[]) {
@@ -352,7 +357,11 @@ function buildTreemap(rows: ExecutionRow[]) {
 function heatColor(value: number, max: number) {
   if (value <= 0 || max <= 0) return '#e2e8f0';
   const index = Math.min(HEATMAP_COLORS.length - 1, Math.ceil((value / max) * (HEATMAP_COLORS.length - 1)));
-  return HEATMAP_COLORS[index];
+  return HEATMAP_COLORS[index] ?? '#2563eb';
+}
+
+function heatTextColor(value: number, max: number) {
+  return HEATMAP_DARK_TEXT.has(heatColor(value, max)) ? '#0f172a' : '#ffffff';
 }
 
 function maxStatusValue(rows: Array<PipelineMonthPoint & { period: string }>, status: keyof Pick<PipelineMonthPoint, 'overdue' | 'pending' | 'done' | 'skipped'>) {

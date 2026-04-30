@@ -23,6 +23,7 @@ import { BrainCircuit, Sparkles } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import type { AiInsightResponse, AiInsightThread, ChartResponse, ExecutionList, ExecutionRow, PipelineResult } from '@/lib/types';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ChartPanel } from '../_components/ChartPanel';
 import { KpiCard } from '../_components/KpiCard';
 import { StatusBadge } from '../_components/StatusBadge';
@@ -85,6 +86,16 @@ export default function GraficosIaPage() {
   const localInsights = useMemo(() => buildNarrativeInsights(pipeline, overdue?.rows ?? [], upcoming?.rows ?? []), [pipeline, overdue, upcoming]);
   const insight = insightMutation.data?.insight;
   const weeklyPlan = useMemo(() => buildWeeklyPlan(overdue?.rows ?? [], upcoming?.rows ?? []), [overdue, upcoming]);
+  const activeThread = useMemo(
+    () => (threadId ? (threadsQuery.data ?? []).find((t) => t.id === threadId) : undefined),
+    [threadId, threadsQuery.data],
+  );
+  const threadHistory = useMemo(() => {
+    if (!activeThread) return [];
+    return activeThread.messages
+      .filter((m) => m.role === 'assistant' && m.content)
+      .map((m) => m.content as AiInsightResponse['insight']);
+  }, [activeThread]);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -99,8 +110,8 @@ export default function GraficosIaPage() {
           <p className="text-[11px] uppercase tracking-[0.18em] text-ds-muted">IA operacional</p>
           <h1 className="text-2xl font-semibold text-text">Insights, gráficos y plan semanal</h1>
         </div>
-        <div className="rounded-full border border-ok/30 bg-ok-dim px-3 py-1 text-xs font-medium text-ok">
-          Groq / OpenRouter configurados
+        <div className="rounded-full border border-ds-accent/30 bg-accent-dim px-3 py-1 text-xs font-medium text-ds-accent">
+          IA activa
         </div>
       </div>
 
@@ -134,19 +145,19 @@ export default function GraficosIaPage() {
               >
                 {insightMutation.isPending ? 'Analizando…' : 'Generar insight auditado'}
               </Button>
-              <select
-                value={threadId ?? ''}
-                onChange={(event) => setThreadId(event.target.value || undefined)}
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-text"
-                aria-label="Seleccionar hilo de análisis IA"
-              >
-                <option value="">Nuevo hilo</option>
-                {(threadsQuery.data ?? []).map((thread) => (
-                  <option key={thread.id} value={thread.id}>
-                    {thread.title}
-                  </option>
-                ))}
-              </select>
+              <Select value={threadId ?? ''} onValueChange={(value) => setThreadId(value || undefined)}>
+                <SelectTrigger className="h-9 w-52 text-sm" aria-label="Seleccionar hilo de análisis IA">
+                  <SelectValue placeholder="Nuevo hilo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Nuevo hilo</SelectItem>
+                  {(threadsQuery.data ?? []).map((thread) => (
+                    <SelectItem key={thread.id} value={thread.id}>
+                      {thread.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             {insightMutation.isError && (
               <p className="rounded-lg bg-danger-dim px-3 py-2 text-sm text-danger">
@@ -155,8 +166,20 @@ export default function GraficosIaPage() {
                   : 'No se pudo generar el insight.'}
               </p>
             )}
+            {threadHistory.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-ds-muted">Historial del hilo</p>
+                {threadHistory.slice(0, -1).map((msg, index) => (
+                  <div key={index} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 opacity-70">
+                    <p className="text-sm font-medium text-text">{msg.summary}</p>
+                  </div>
+                ))}
+              </div>
+            )}
             {insightMutation.data ? (
               <InsightCard result={insightMutation.data} />
+            ) : threadHistory.length > 0 ? (
+              <InsightFromHistory insight={threadHistory.at(-1)!} />
             ) : (
               <div className="space-y-2">
                 {localInsights.messages.map((message) => (
@@ -280,6 +303,17 @@ function AiChart({ result }: { result: ChartResponse }) {
         {result.spec.chartType === 'bar' && <Bar dataKey="value" name={metricLabel} fill="#2563eb" />}
       </Chart>
     </ResponsiveContainer>
+  );
+}
+
+function InsightFromHistory({ insight }: { insight: AiInsightResponse['insight'] }) {
+  return (
+    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+      <p className="mb-3 text-sm font-semibold text-text">{insight.summary}</p>
+      <InsightList title="Hallazgos" items={insight.findings} />
+      <InsightList title="Riesgos" items={insight.risks} />
+      <InsightList title="Siguientes acciones" items={insight.nextActions} />
+    </div>
   );
 }
 

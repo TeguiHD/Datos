@@ -1,14 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 export function useSidebarCollapsed() {
-  const [collapsed, setCollapsedState] = useState(false);
-
-  useEffect(() => {
-    const stored = localStorage.getItem('datos-sidebar-collapsed');
-    if (stored === 'true') setCollapsedState(true);
-  }, []);
+  const [collapsed, setCollapsedState] = useState(
+    () => typeof window !== 'undefined' && localStorage.getItem('datos-sidebar-collapsed') === 'true',
+  );
 
   const setCollapsed = (value: boolean) => {
     setCollapsedState(value);
