@@ -38,6 +38,7 @@ const STATUS_LABELS = {
 
 const HEATMAP_STATUSES = ['OVERDUE', 'PENDING', 'DONE', 'SKIPPED'] as const;
 const HEATMAP_COLORS = ['#eff6ff', '#bfdbfe', '#60a5fa', '#2563eb', '#1e3a8a'];
+const TREEMAP_COLORS = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#64748b', '#dc2626'];
 // Relative luminance threshold — colors above 0.35 get dark text
 const HEATMAP_DARK_TEXT = new Set(['#eff6ff', '#bfdbfe', '#60a5fa', '#e2e8f0']);
 
@@ -184,11 +185,13 @@ export default function AnalyticsPage() {
 
         <ChartPanel title="Treemap ABC × HH" subtitle="Tamaño por HH planificada filtrada" loading={executionsQuery.isLoading}>
           <ResponsiveContainer width="100%" height={320}>
-            <Treemap data={treemapRows} dataKey="size" nameKey="name" aspectRatio={4 / 3} stroke="#fff">
-              {treemapRows.map((entry, index) => (
-                <Cell key={entry.name} fill={['#2563eb', '#059669', '#d97706', '#7c3aed', '#64748b'][index % 5]} />
-              ))}
-            </Treemap>
+            <Treemap
+              data={treemapRows}
+              dataKey="size"
+              nameKey="name"
+              aspectRatio={4 / 3}
+              content={<TreemapCell colors={TREEMAP_COLORS} />}
+            />
           </ResponsiveContainer>
         </ChartPanel>
 
@@ -366,6 +369,26 @@ function heatTextColor(value: number, max: number) {
 
 function maxStatusValue(rows: Array<PipelineMonthPoint & { period: string }>, status: keyof Pick<PipelineMonthPoint, 'overdue' | 'pending' | 'done' | 'skipped'>) {
   return Math.max(0, ...rows.map((row) => row[status]));
+}
+
+function TreemapCell({ x, y, width, height, name, root, depth, index, colors }: {
+  x?: number; y?: number; width?: number; height?: number;
+  name?: string; root?: boolean; depth?: number; index?: number; colors?: string[];
+}) {
+  if (root || depth === 0 || !width || !height || width < 2 || height < 2) return null;
+  const fill = (colors ?? TREEMAP_COLORS)[(index ?? 0) % (colors ?? TREEMAP_COLORS).length];
+  const showLabel = width > 60 && height > 30;
+  return (
+    <g>
+      <rect x={x} y={y} width={width} height={height} fill={fill} stroke="#fff" strokeWidth={2} rx={4} />
+      {showLabel && (
+        <text x={(x ?? 0) + (width ?? 0) / 2} y={(y ?? 0) + (height ?? 0) / 2} textAnchor="middle" dominantBaseline="middle"
+          fill="#fff" fontSize={Math.min(13, width / 8)} fontWeight={500} style={{ pointerEvents: 'none' }}>
+          <tspan x={(x ?? 0) + (width ?? 0) / 2} dy="-0.5em">{(name ?? '').length > 20 ? name!.slice(0, 18) + '…' : name}</tspan>
+        </text>
+      )}
+    </g>
+  );
 }
 
 function priorityScore(row: ExecutionRow) {

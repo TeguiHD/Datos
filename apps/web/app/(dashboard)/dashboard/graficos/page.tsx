@@ -45,6 +45,7 @@ export default function GraficosIaPage() {
   const [prompt, setPrompt] = useState(PROMPTS[0] ?? '');
   const [insightPrompt, setInsightPrompt] = useState('Analiza riesgo operacional, vencidas ABC-A, HH próximas 7 días y próximos pasos.');
   const [threadId, setThreadId] = useState<string | undefined>();
+  const NEW_THREAD = '__new__';
 
   const pipelineQuery = useQuery({
     queryKey: ['ai-insights-pipeline', nowYear],
@@ -145,12 +146,12 @@ export default function GraficosIaPage() {
               >
                 {insightMutation.isPending ? 'Analizando…' : 'Generar insight auditado'}
               </Button>
-              <Select value={threadId ?? ''} onValueChange={(value) => setThreadId(value || undefined)}>
+              <Select value={threadId ?? NEW_THREAD} onValueChange={(value) => setThreadId(value === NEW_THREAD ? undefined : value)}>
                 <SelectTrigger className="h-9 w-52 text-sm" aria-label="Seleccionar hilo de análisis IA">
                   <SelectValue placeholder="Nuevo hilo" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Nuevo hilo</SelectItem>
+                  <SelectItem value={NEW_THREAD}>Nuevo hilo</SelectItem>
                   {(threadsQuery.data ?? []).map((thread) => (
                     <SelectItem key={thread.id} value={thread.id}>
                       {thread.title}

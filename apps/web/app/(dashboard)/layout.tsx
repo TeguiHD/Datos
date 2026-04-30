@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Eye, EyeOff } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { FloatingAiChat } from './_components/FloatingAiChat';
 import { Sidebar } from './_components/Sidebar';
@@ -212,8 +213,50 @@ function SessionActions({ compact = false }: { compact?: boolean }) {
   );
 }
 
+function PasswordField({
+  label,
+  value,
+  onChange,
+  autoComplete,
+  minLength,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  autoComplete: string;
+  minLength?: number;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <label className="block text-sm text-text">
+      {label}
+      <div className="relative mt-1.5">
+        <input
+          type={show ? 'text' : 'password'}
+          autoComplete={autoComplete}
+          required
+          minLength={minLength}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 pr-10 text-sm text-text"
+        />
+        <button
+          type="button"
+          tabIndex={-1}
+          onClick={() => setShow((s) => !s)}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ds-muted hover:text-text"
+          aria-label={show ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+        >
+          {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+        </button>
+      </div>
+    </label>
+  );
+}
+
 function MustChangePasswordGate({ email }: { email: string }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -237,8 +280,9 @@ function MustChangePasswordGate({ email }: { email: string }) {
         method: 'POST',
         body: JSON.stringify({ currentPassword, newPassword }),
       });
-      setOk('Contraseña actualizada. Redirigiendo al login…');
-      setTimeout(() => router.replace('/login'), 600);
+      setOk('Contraseña actualizada. Ingresando…');
+      await queryClient.invalidateQueries({ queryKey: ['auth-me'] });
+      setTimeout(() => router.replace('/dashboard'), 400);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
         setErr('Contraseña actual inválida.');
@@ -251,63 +295,29 @@ function MustChangePasswordGate({ email }: { email: string }) {
   };
 
   return (
-    <div className="min-h-screen grid place-items-center px-4">
-      <form onSubmit={onSubmit} className="panel w-full max-w-lg p-6 space-y-4">
+    <div className="min-h-screen grid place-items-center bg-bg px-4">
+      <form onSubmit={onSubmit} className="w-full max-w-lg rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 space-y-4">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Seguridad obligatoria</p>
-          <h1 className="mt-2 text-xl font-semibold text-slate-900">Cambio inicial de contraseña</h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Usuario: <span className="font-medium">{email}</span>. Debes cambiar la contraseña temporal antes de continuar.
+          <p className="text-[11px] uppercase tracking-[0.18em] text-ds-muted">Seguridad obligatoria</p>
+          <h1 className="mt-2 text-xl font-semibold text-text">Cambio inicial de contraseña</h1>
+          <p className="mt-1 text-sm text-ds-muted">
+            Usuario: <span className="font-medium text-text">{email}</span>. Debes cambiar la contraseña temporal antes de continuar.
           </p>
         </div>
 
-        <label className="block text-sm text-slate-700">
-          Contraseña actual
-          <input
-            type="password"
-            autoComplete="current-password"
-            required
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            className="mt-1.5 w-full rounded-md border px-3 py-2"
-          />
-        </label>
+        <PasswordField label="Contraseña actual" value={currentPassword} onChange={setCurrentPassword} autoComplete="current-password" />
+        <PasswordField label="Nueva contraseña" value={newPassword} onChange={setNewPassword} autoComplete="new-password" minLength={12} />
+        <PasswordField label="Confirmar nueva contraseña" value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" minLength={12} />
 
-        <label className="block text-sm text-slate-700">
-          Nueva contraseña
-          <input
-            type="password"
-            autoComplete="new-password"
-            required
-            minLength={12}
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            className="mt-1.5 w-full rounded-md border px-3 py-2"
-          />
-        </label>
+        <p className="text-xs text-ds-muted">Requisito: 12+ caracteres, mayúscula, minúscula, número y símbolo.</p>
 
-        <label className="block text-sm text-slate-700">
-          Confirmar nueva contraseña
-          <input
-            type="password"
-            autoComplete="new-password"
-            required
-            minLength={12}
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            className="mt-1.5 w-full rounded-md border px-3 py-2"
-          />
-        </label>
-
-        <p className="text-xs text-slate-500">Requisito: 12+ caracteres, mayúscula, minúscula, número y símbolo.</p>
-
-        {err && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
-        {ok && <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{ok}</p>}
+        {err && <p className="rounded-md border border-danger/30 bg-danger-dim px-3 py-2 text-sm text-danger">{err}</p>}
+        {ok && <p className="rounded-md border border-ok/30 bg-ok-dim px-3 py-2 text-sm text-ok">{ok}</p>}
 
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-brand-900 disabled:opacity-60"
+          className="w-full rounded-md bg-ds-accent px-3 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-60"
         >
           {submitting ? 'Actualizando…' : 'Actualizar contraseña'}
         </button>
