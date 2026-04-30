@@ -71,7 +71,7 @@ export class ChartBuilderService {
     rawPrompt: string,
     ctx: { ip: string; userAgent: string },
   ): Promise<ChartResponse> {
-    this.quota.check(user.id, user.role, 'chart');
+    await this.quota.check(user.id, user.role, 'chart');
     const sanitized = sanitizeUserPrompt(rawPrompt);
     if (!sanitized) throw new BadRequestException('Prompt vacío');
     if (isBroadQuery(sanitized)) {

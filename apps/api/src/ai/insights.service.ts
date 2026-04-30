@@ -46,7 +46,7 @@ export class InsightsService {
     input: { prompt?: string; threadId?: string },
     ctx: { ip: string; userAgent: string },
   ) {
-    this.quota.check(user.id, user.role, 'insight');
+    await this.quota.check(user.id, user.role, 'insight');
     const prompt = sanitizeUserPrompt(input.prompt ?? 'Analiza el estado actual y prioriza la semana.');
     if (!prompt) throw new BadRequestException('Prompt vacío');
 

@@ -37,9 +37,9 @@ export function Pagination({ page, take, total, onPage }: PaginationProps) {
         </Button>
 
         {pages.map((pageItem, index) =>
-          pageItem === '...' ? (
+          pageItem === '…' ? (
             <span key={`ellipsis-${index}`} className="px-1 text-xs text-ds-muted">
-              ...
+              …
             </span>
           ) : (
             <Button
@@ -72,20 +72,20 @@ export function Pagination({ page, take, total, onPage }: PaginationProps) {
   );
 }
 
-function buildPageList(current: number, total: number): (number | '...')[] {
+function buildPageList(current: number, total: number): (number | '…')[] {
   if (total <= 7) return Array.from({ length: total }, (_, index) => index);
 
-  const result: (number | '...')[] = [];
+  const result: (number | '…')[] = [];
   const add = (page: number) => {
     if (!result.includes(page)) result.push(page);
   };
 
   add(0);
-  if (current > 2) result.push('...');
+  if (current > 2) result.push('…');
   for (let index = Math.max(1, current - 1); index <= Math.min(total - 2, current + 1); index++) {
     add(index);
   }
-  if (current < total - 3) result.push('...');
+  if (current < total - 3) result.push('…');
   add(total - 1);
   return result;
 }

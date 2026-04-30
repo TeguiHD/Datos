@@ -72,7 +72,7 @@ export function UserMenu({ email, role }: UserMenuProps) {
             className="cursor-pointer"
           >
             <ShieldOff className="size-4" />
-            {forgetDevice.isPending ? 'Olvidando dispositivo...' : 'Olvidar dispositivo'}
+            {forgetDevice.isPending ? 'Olvidando dispositivo…' : 'Olvidar dispositivo'}
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => logout.mutate()}
@@ -80,7 +80,7 @@ export function UserMenu({ email, role }: UserMenuProps) {
             className="cursor-pointer text-danger focus:bg-danger-dim focus:text-danger"
           >
             <LogOut className="size-4" />
-            {logout.isPending ? 'Cerrando sesión...' : 'Cerrar sesión'}
+            {logout.isPending ? 'Cerrando sesión…' : 'Cerrar sesión'}
           </DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>

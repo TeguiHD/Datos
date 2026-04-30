@@ -2282,14 +2282,42 @@ Esta sección reemplaza el estado histórico de checkboxes del cuerpo del plan. 
 | Charts avanzados | OK inicial: forecast, heatmap, treemap, anomalías |
 | IA gráficos | OK |
 | IA narrativa persistente | OK inicial: endpoint, hilos, memoria, explicación |
+| Proveedor IA NVIDIA NIM | OK: provider en cascada y modelos configurables |
+| Cuotas IA multi-réplica | OK: Redis con fallback a memoria local |
 | Import/export plantilla + dry-run + diff | OK |
 | Auditoría visible | OK |
 | Build/typecheck | OK |
 
+### Addendum 2026-04-29 — NVIDIA NIM y robustez IA
+
+Se agregó NVIDIA NIM como primer proveedor de IA en cascada, antes de Groq y OpenRouter:
+
+- [x] Provider `nvidia` agregado a `apps/api/src/ai/llm.client.ts`.
+- [x] Endpoint NVIDIA configurado: `https://integrate.api.nvidia.com/v1/chat/completions`.
+- [x] Variable `NVIDIA_API_KEY` documentada en `.env.example`.
+- [x] `AI_PROVIDER_ORDER=nvidia,groq,openrouter` documentado.
+- [x] `AI_MODELS_NVIDIA` documentado con modelos de interés.
+- [x] Cuota IA movida a Redis si existe `REDIS_URL`, con fallback seguro a memoria local.
+- [x] `search`, `chart` e `insight` esperan la cuota de forma async antes de llamar proveedores IA.
+- [x] API verificada con `pnpm --filter @datos/api typecheck`, `pnpm --filter @datos/api test -- --runInBand` y `pnpm --filter @datos/api build`.
+- [x] Web verificada con `pnpm --filter @datos/web typecheck` y `pnpm --filter @datos/web build`.
+
+Modelos NVIDIA confirmados por catálogo/API:
+
+| Interés | Model ID configurado |
+|---|---|
+| GLM-5.1 | `z-ai/glm-5.1` |
+| DeepSeek v4 Pro | `deepseek-ai/deepseek-v4-pro` |
+| GLM 4.7 free endpoint | `z-ai/glm4.7` |
+| MiniMax 2.7 | `minimaxai/minimax-m2.7` |
+| Mistral Medium 3.5 128B | `mistralai/mistral-medium-3.5-128b` |
+
+Nota: `nemotron-voicechat` queda como investigación separada porque no aparece como ID exacto en la lista de modelos de texto consultada. Si se habilita como endpoint de voz o modalidad distinta a chat completions, debe entrar como sub-proyecto de voz/multimodal, no mezclarse con el parser JSON actual.
+
 ### Pendientes fuera de SP1, no bloqueantes para OK
 
 - Mejorar IA narrativa con evaluación automática de calidad de respuesta y tests con fixtures reales.
-- Mover cuota IA de memoria a Redis si se despliega en múltiples réplicas.
 - Agregar Playwright visual regression para desktop/mobile.
 - Virtualización de tablas grandes si se muestran más de 500 filas en UI.
 - Permitir mapper de columnas editable visualmente; actualmente el mapper es visible y el backend valida plantilla estándar.
+- Investigar endpoint/modalidad exacta para `nemotron-voicechat` antes de conectarlo a UI.

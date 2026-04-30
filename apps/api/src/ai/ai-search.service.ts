@@ -36,7 +36,7 @@ export class AiSearchService {
     rawPrompt: string,
     ctx: { ip: string; userAgent: string },
   ) {
-    this.quota.check(user.id, user.role, 'search');
+    await this.quota.check(user.id, user.role, 'search');
     const sanitized = sanitizeUserPrompt(rawPrompt);
     if (!sanitized) throw new BadRequestException('Prompt vacío');
     if (isBroadQuery(sanitized)) {

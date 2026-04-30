@@ -2,12 +2,19 @@ import { Logger } from '@nestjs/common';
 
 const log = new Logger('LlmClient');
 
-type Provider = 'groq' | 'openrouter';
+type Provider = 'groq' | 'openrouter' | 'nvidia';
 
-const DEFAULT_PROVIDER_ORDER: Provider[] = ['groq', 'openrouter'];
+const DEFAULT_PROVIDER_ORDER: Provider[] = ['nvidia', 'groq', 'openrouter'];
 const DEFAULT_MODELS: Record<Provider, string[]> = {
   groq: ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile'],
   openrouter: ['openai/gpt-oss-120b:free', 'nvidia/nemotron-3-super:free', 'z-ai/glm-4.5-air:free'],
+  nvidia: [
+    'z-ai/glm-5.1',
+    'deepseek-ai/deepseek-v4-pro',
+    'z-ai/glm4.7',
+    'minimaxai/minimax-m2.7',
+    'mistralai/mistral-medium-3.5-128b',
+  ],
 };
 
 const SYSTEM_PROMPT = `Eres un parser. Recibes una consulta en lenguaje natural sobre planificación de mantenciones industriales y devuelves SOLO un objeto JSON con filtros estructurados.
@@ -118,6 +125,7 @@ async function callLlmJson(
       const t0 = Date.now();
       try {
         if (provider === 'groq') return await groqCall(task, userPrompt, fields, model, t0);
+        if (provider === 'nvidia') return await nvidiaCall(task, userPrompt, fields, model, t0);
         return await openrouterCall(task, userPrompt, fields, model, t0);
       } catch (e) {
         errors.push(`${provider}/${model}: ${(e as Error).message}`);
@@ -136,21 +144,25 @@ function systemPromptFor(task: LlmTask): string {
 
 function resolveProviderOrder(): Provider[] {
   const single = (process.env.AI_PROVIDER ?? '').trim().toLowerCase();
-  if (single === 'groq' || single === 'openrouter') return [single];
+  if (single === 'groq' || single === 'openrouter' || single === 'nvidia') return [single];
 
   const raw = (process.env.AI_PROVIDER_ORDER ?? '').trim();
   if (!raw) return DEFAULT_PROVIDER_ORDER;
 
   const out: Provider[] = [];
   for (const p of raw.split(',').map((x) => x.trim().toLowerCase())) {
-    if ((p === 'groq' || p === 'openrouter') && !out.includes(p)) out.push(p);
+    if ((p === 'groq' || p === 'openrouter' || p === 'nvidia') && !out.includes(p)) out.push(p);
   }
   return out.length > 0 ? out : DEFAULT_PROVIDER_ORDER;
 }
 
 function resolveModelOrder(provider: Provider): string[] {
   const scoped =
-    provider === 'groq' ? process.env.AI_MODELS_GROQ : process.env.AI_MODELS_OPENROUTER;
+    provider === 'groq'
+      ? process.env.AI_MODELS_GROQ
+      : provider === 'nvidia'
+        ? process.env.AI_MODELS_NVIDIA
+        : process.env.AI_MODELS_OPENROUTER;
   const scopedList = parseCsv(scoped);
   if (scopedList.length > 0) return scopedList;
 
@@ -158,6 +170,51 @@ function resolveModelOrder(provider: Provider): string[] {
   if (globalModel) return [globalModel];
 
   return DEFAULT_MODELS[provider];
+}
+
+async function nvidiaCall(
+  task: LlmTask,
+  userPrompt: string,
+  fields: readonly string[],
+  model: string,
+  t0: number,
+): Promise<LlmCallResult> {
+  const apiKey = process.env.NVIDIA_API_KEY;
+  if (!apiKey) throw new Error('NVIDIA_API_KEY not set');
+  const sys = systemPromptFor(task).replace('{{FIELDS}}', fields.map((f) => `- ${f}`).join('\n'));
+  const maxTokens = task === 'insight' ? 900 : 256;
+
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 20_000);
+  try {
+    const res = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        max_tokens: maxTokens,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: sys },
+          { role: 'user', content: `Consulta del usuario (texto entre <<<>>>):\n<<<${userPrompt}>>>` },
+        ],
+      }),
+      signal: ctl.signal,
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`NVIDIA HTTP ${res.status}: ${txt.slice(0, 200)}`);
+    }
+    const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    const raw = json.choices?.[0]?.message?.content ?? '{}';
+    return { raw, model, latencyMs: Date.now() - t0 };
+  } finally {
+    clearTimeout(t);
+  }
 }
 
 function parseCsv(raw: string | undefined): string[] {

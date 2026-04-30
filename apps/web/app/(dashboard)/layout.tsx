@@ -237,7 +237,7 @@ function MustChangePasswordGate({ email }: { email: string }) {
         method: 'POST',
         body: JSON.stringify({ currentPassword, newPassword }),
       });
-      setOk('Contraseña actualizada. Redirigiendo al login...');
+      setOk('Contraseña actualizada. Redirigiendo al login…');
       setTimeout(() => router.replace('/login'), 600);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
@@ -309,7 +309,7 @@ function MustChangePasswordGate({ email }: { email: string }) {
           disabled={submitting}
           className="w-full rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-brand-900 disabled:opacity-60"
         >
-          {submitting ? 'Actualizando...' : 'Actualizar contraseña'}
+          {submitting ? 'Actualizando…' : 'Actualizar contraseña'}
         </button>
       </form>
     </div>

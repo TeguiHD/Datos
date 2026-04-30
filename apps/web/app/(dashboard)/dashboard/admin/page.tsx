@@ -120,7 +120,7 @@ export default function AdminPage() {
           <span className="text-xs text-slate-500">OK: {okCount} · FAIL: {failCount}</span>
         </div>
 
-        {(totpFailQuery.isLoading || totpOkQuery.isLoading) && <p className="text-sm text-slate-500">Cargando auditoría 2FA...</p>}
+        {(totpFailQuery.isLoading || totpOkQuery.isLoading) && <p className="text-sm text-slate-500">Cargando auditoría 2FA…</p>}
 
         {(totpFailQuery.isError || totpOkQuery.isError) && (
           <p className="text-sm text-red-700">No se pudo cargar auditoría de intentos 2FA.</p>
