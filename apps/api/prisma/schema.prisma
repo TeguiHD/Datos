@@ -22,25 +22,69 @@ enum ExecStatus {
   SKIPPED
 }
 
+enum PlantStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum EquipmentType {
+  MOTOR
+  PUMP
+  FILTER
+  PANEL
+  OTHER
+}
+
+enum PlanFrequency {
+  MONTHLY
+  QUARTERLY
+  SEMIANNUAL
+  ANNUAL
+  CUSTOM
+}
+
+enum OperationalExecutionStatus {
+  SCHEDULED
+  IN_PROGRESS
+  DONE_PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  SKIPPED
+  POSTPONED
+}
+
+enum ExecutionOutcome {
+  DONE
+  DONE_WITH_OBSERVATIONS
+  NOT_DONE
+}
+
 model User {
-  id              String    @id @default(cuid())
-  email           String    @unique
-  passwordHash    String
-  totpSecretEnc   String?
-  totpEnabled     Boolean   @default(false)
-  backupCodesEnc  String?
-  role            Role      @default(VIEWER)
-  mustChangePass  Boolean   @default(false)
-  failedLogins    Int       @default(0)
-  lockedUntil     DateTime?
-  lastLoginAt     DateTime?
-  lastLoginIp     String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  sessions        Session[]
-  auditLogs       AuditLog[]
-  savedViews      ScheduleSavedView[]
-  aiInsightThreads AiInsightThread[]
+  id                              String                 @id @default(cuid())
+  email                           String                 @unique
+  passwordHash                    String
+  totpSecretEnc                   String?
+  totpEnabled                     Boolean                @default(false)
+  backupCodesEnc                  String?
+  role                            Role                   @default(VIEWER)
+  mustChangePass                  Boolean                @default(false)
+  failedLogins                    Int                    @default(0)
+  lockedUntil                     DateTime?
+  lastLoginAt                     DateTime?
+  lastLoginIp                     String?
+  createdAt                       DateTime               @default(now())
+  updatedAt                       DateTime               @updatedAt
+  sessions                        Session[]
+  auditLogs                       AuditLog[]
+  savedViews                      ScheduleSavedView[]
+  aiInsightThreads                AiInsightThread[]
+  plantsCreated                   Plant[]                @relation("PlantCreatedBy")
+  plantsUpdated                   Plant[]                @relation("PlantUpdatedBy")
+  planTasksResponsible            MaintenancePlanTask[]  @relation("PlanTaskResponsible")
+  operationalExecutionsRegistered OperationalExecution[] @relation("ExecutionRegisteredBy")
+  operationalExecutionsApproved   OperationalExecution[] @relation("ExecutionApprovedBy")
+  operationalExecutionsRejected   OperationalExecution[] @relation("ExecutionRejectedBy")
+  evidenceUploaded                Evidence[]             @relation("EvidenceUploadedBy")
 
   @@index([role])
 }
@@ -179,6 +223,137 @@ model TaskExecution {
   @@index([taskId, status])
 }
 
+model Plant {
+  id              String                @id @default(cuid())
+  psr             String                @unique
+  name            String
+  description     String?
+  area            String?
+  color           String?
+  status          PlantStatus           @default(ACTIVE)
+  visibleToViewer Boolean               @default(true)
+  inactiveReason  String?
+  deletedAt       DateTime?
+  createdById     String?
+  updatedById     String?
+  createdBy       User?                 @relation("PlantCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy       User?                 @relation("PlantUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  equipment       Equipment[]
+  planTasks       MaintenancePlanTask[]
+
+  @@index([status])
+  @@index([area])
+  @@index([deletedAt])
+}
+
+model Equipment {
+  id        String                @id @default(cuid())
+  plantId   String
+  plant     Plant                 @relation(fields: [plantId], references: [id], onDelete: Cascade)
+  type      EquipmentType         @default(OTHER)
+  name      String
+  model     String?
+  serial    String?
+  notes     String?
+  deletedAt DateTime?
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+  planTasks MaintenancePlanTask[]
+
+  @@index([plantId])
+  @@index([type])
+  @@index([deletedAt])
+}
+
+model MaintenancePlanTask {
+  id             String                 @id @default(cuid())
+  plantId        String
+  plant          Plant                  @relation(fields: [plantId], references: [id], onDelete: Cascade)
+  equipmentId    String?
+  equipment      Equipment?             @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+  abc            String?
+  description    String
+  frequency      PlanFrequency
+  cronExpression String?
+  hhPlan         Decimal                @db.Decimal(10, 2)
+  responsibleId  String?
+  responsible    User?                  @relation("PlanTaskResponsible", fields: [responsibleId], references: [id], onDelete: SetNull)
+  active         Boolean                @default(true)
+  deletedAt      DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  executions     OperationalExecution[]
+
+  @@index([plantId])
+  @@index([equipmentId])
+  @@index([abc])
+  @@index([frequency])
+  @@index([active])
+  @@index([deletedAt])
+}
+
+model OperationalExecution {
+  id             String                     @id @default(cuid())
+  planTaskId     String
+  planTask       MaintenancePlanTask        @relation(fields: [planTaskId], references: [id], onDelete: Cascade)
+  dueDate        DateTime
+  startedAt      DateTime?
+  doneDate       DateTime?
+  status         OperationalExecutionStatus @default(SCHEDULED)
+  outcome        ExecutionOutcome?
+  hhPlan         Decimal                    @db.Decimal(10, 2)
+  hhActual       Decimal?                   @db.Decimal(10, 2)
+  comment        String?
+  skipReason     String?
+  postponedTo    DateTime?
+  reopenedReason String?
+  registeredById String?
+  approvedById   String?
+  rejectedById   String?
+  rejectedReason String?
+  registeredBy   User?                      @relation("ExecutionRegisteredBy", fields: [registeredById], references: [id], onDelete: SetNull)
+  approvedBy     User?                      @relation("ExecutionApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  rejectedBy     User?                      @relation("ExecutionRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
+  registeredAt   DateTime?
+  approvedAt     DateTime?
+  rejectedAt     DateTime?
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+  evidence       Evidence[]
+
+  @@unique([planTaskId, dueDate])
+  @@index([dueDate])
+  @@index([status])
+  @@index([planTaskId, status])
+  @@index([registeredById])
+  @@index([approvedById])
+  @@index([rejectedById])
+}
+
+model Evidence {
+  id           String               @id @default(cuid())
+  executionId  String
+  execution    OperationalExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  filename     String
+  originalName String?
+  mime         String
+  sizeBytes    Int
+  sha256       String
+  path         String
+  description  String?
+  uploadedById String?
+  uploadedBy   User?                @relation("EvidenceUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+  uploadedAt   DateTime             @default(now())
+  deletedAt    DateTime?
+
+  @@index([executionId])
+  @@index([uploadedById])
+  @@index([sha256])
+  @@index([deletedAt])
+}
+
 model AuditLog {
   id        String   @id @default(cuid())
   userId    String?
@@ -200,14 +375,14 @@ model AuditLog {
 }
 
 model ImportRun {
-  id         String   @id @default(cuid())
-  userId     String?
-  filename   String
-  fileHash   String
-  rowsTotal  Int
-  rowsOk     Int
-  rowsErr    Int
-  status     String
-  message    String?
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  userId    String?
+  filename  String
+  fileHash  String
+  rowsTotal Int
+  rowsOk    Int
+  rowsErr   Int
+  status    String
+  message   String?
+  createdAt DateTime @default(now())
 }
