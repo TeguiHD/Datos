@@ -70,6 +70,7 @@ export class ChartBuilderService {
     user: { id: string; role: Role },
     rawPrompt: string,
     ctx: { ip: string; userAgent: string },
+    options?: { lastFilter?: AiFilter },
   ): Promise<ChartResponse> {
     await this.quota.check(user.id, user.role, 'chart');
     const sanitized = sanitizeUserPrompt(rawPrompt);
@@ -84,7 +85,7 @@ export class ChartBuilderService {
     const resolved = await this.resolveSpec(sanitized, user.id, ctx);
     const spec: ChartSpec = {
       ...resolved.spec,
-      filter: this.applyRolePolicy(user.role, resolved.spec.filter ?? {}),
+      filter: this.applyRolePolicy(user.role, mergeSessionFilter(options?.lastFilter, resolved.spec.filter ?? {})),
     };
 
     const { data, total } = await this.runAggregate(spec, user.role);
@@ -366,4 +367,21 @@ function heuristicChartSpec(prompt: string): Partial<ChartSpec> {
   const filter: AiFilter = {};
   if (p.includes('vencid')) filter.onlyOverdue = true;
   return { chartType, groupBy, metric, filter };
+}
+
+function mergeSessionFilter(previous: AiFilter | undefined, next: AiFilter): AiFilter {
+  if (!previous) return next;
+  const merged: AiFilter = { ...previous, ...next };
+
+  if (next.onlyUpcomingDays !== undefined) {
+    delete merged.onlyOverdue;
+  }
+  if (next.onlyOverdue !== undefined) {
+    delete merged.onlyUpcomingDays;
+  }
+  if (next.yearFrom !== undefined || next.yearTo !== undefined || next.monthFrom !== undefined || next.monthTo !== undefined) {
+    delete merged.onlyUpcomingDays;
+  }
+
+  return AiFilterSchema.parse(merged);
 }

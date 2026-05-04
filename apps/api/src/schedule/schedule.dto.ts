@@ -34,9 +34,11 @@ export const EXECUTION_GROUP_FIELDS = [
 ] as const;
 
 export const EXECUTION_EXPORT_FORMATS = ['csv', 'xlsx'] as const;
+export const PLANT_SORT_FIELDS = ['risk', 'hh', 'overdue', 'name', 'nextDueDate'] as const;
 
 export type ExecutionGroupField = (typeof EXECUTION_GROUP_FIELDS)[number];
 export type ExecutionExportFormat = (typeof EXECUTION_EXPORT_FORMATS)[number];
+export type PlantSortField = (typeof PLANT_SORT_FIELDS)[number];
 
 export class UpcomingDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(365) days?: number;
@@ -84,6 +86,11 @@ export class GroupExecutionsDto extends ExecutionFiltersBaseDto {
 }
 
 export class PipelineDto extends ExecutionFiltersBaseDto {}
+
+export class PlantListDto extends ExecutionFiltersBaseDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(500) take?: number;
+  @IsOptional() @IsIn(PLANT_SORT_FIELDS) sortBy?: PlantSortField;
+}
 
 class SavedViewParamsDto extends ExecutionFiltersBaseDto {
   @IsOptional() @IsIn(EXECUTION_SORT_FIELDS) sortBy?: ExecutionSortField;

@@ -35,6 +35,7 @@ export class AiSearchService {
     user: { id: string; role: Role },
     rawPrompt: string,
     ctx: { ip: string; userAgent: string },
+    options?: { lastFilter?: AiFilter },
   ) {
     await this.quota.check(user.id, user.role, 'search');
     const sanitized = sanitizeUserPrompt(rawPrompt);
@@ -47,7 +48,8 @@ export class AiSearchService {
     }
 
     const resolved = await this.resolveFilter(sanitized, user.id, ctx);
-    const filter = this.applyRolePolicy(user.role, resolved.filter);
+    const resolvedFilter = mergeSessionFilter(options?.lastFilter, resolved.filter);
+    const filter = this.applyRolePolicy(user.role, resolvedFilter);
     const data = await this.runQuery(filter);
 
     await this.recordAudit(user.id, sanitized, resolved.model, filter, data.count, resolved.outcome, ctx);
@@ -219,4 +221,21 @@ export class AiSearchService {
 
 function startOfMonth(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+}
+
+function mergeSessionFilter(previous: AiFilter | undefined, next: AiFilter): AiFilter {
+  if (!previous) return next;
+  const merged: AiFilter = { ...previous, ...next };
+
+  if (next.onlyUpcomingDays !== undefined) {
+    delete merged.onlyOverdue;
+  }
+  if (next.onlyOverdue !== undefined) {
+    delete merged.onlyUpcomingDays;
+  }
+  if (next.yearFrom !== undefined || next.yearTo !== undefined || next.monthFrom !== undefined || next.monthTo !== undefined) {
+    delete merged.onlyUpcomingDays;
+  }
+
+  return AiFilterSchema.parse(merged);
 }

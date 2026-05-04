@@ -13,6 +13,7 @@ import {
   HeatmapDto,
   ListExecutionsDto,
   MonthlyDto,
+  PlantListDto,
   PipelineDto,
   UpdateSavedViewDto,
   UpcomingDto,
@@ -60,6 +61,11 @@ export class ScheduleController {
   @Get('whats-next')
   whatsNext() {
     return this.schedule.whatsNext();
+  }
+
+  @Get('plants')
+  plants(@Query() q: PlantListDto) {
+    return this.schedule.plants(q);
   }
 
   @Get('executions')

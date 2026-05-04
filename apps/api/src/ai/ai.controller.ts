@@ -6,6 +6,7 @@ import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles, RolesGuard } from '../auth/guards/roles.guard';
 import { CurrentUser } from '../auth/decorators';
+import { AiAskService } from './ai-ask.service';
 import { AiSearchService } from './ai-search.service';
 import { ChartBuilderService } from './chart.service';
 import { InsightsService } from './insights.service';
@@ -29,10 +30,21 @@ class AiInsightDto {
 @Roles(Role.SUPERADMIN, Role.ADMIN, Role.EDITOR, Role.VIEWER)
 export class AiController {
   constructor(
+    private askService: AiAskService,
     private ai: AiSearchService,
     private chart: ChartBuilderService,
     private insights: InsightsService,
   ) {}
+
+  @Post('ask')
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
+  ask(
+    @CurrentUser() u: { id: string; role: Role },
+    @Body() body: unknown,
+    @Req() req: Request,
+  ) {
+    return this.askService.ask(u, body, requestContext(req));
+  }
 
   @Post('search')
   @Throttle({ default: { ttl: 60_000, limit: 10 } })

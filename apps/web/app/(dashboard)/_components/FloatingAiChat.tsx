@@ -5,19 +5,25 @@ import { useMutation } from '@tanstack/react-query';
 import { 
   Bot, ChevronDown, Loader2, Plus, SendHorizonal, 
   Sparkles, X, Activity, BarChart3, ArrowRight,
-  CalendarDays, Filter, ChevronRight, MessageSquare
+  Filter, ChevronRight, MessageSquare
 } from 'lucide-react';
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie,
   XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend,
 } from 'recharts';
 import { api, ApiError } from '@/lib/api';
-import type { ChartResponse, ExecutionRow } from '@/lib/types';
+import type { AskResponse, AskSuggestion, ChartResponse, ExecutionRow, SessionContext } from '@/lib/types';
 import Link from 'next/link';
 
 type Role = 'user' | 'assistant';
 
-type AskMode = 'search' | 'chart';
+type AskMode = 'auto' | 'search' | 'chart';
+type PendingRequest = {
+  id: string;
+  sessionId: string;
+  askMode: AskMode;
+  silent: boolean;
+};
 
 interface ChatMessage {
   id: string;
@@ -28,12 +34,16 @@ interface ChatMessage {
     model: string;
     latencyMs: number;
     parser?: 'llm' | 'heuristic';
+    classifier?: 'llm' | 'heuristic';
     count: number;
     mode: 'executions';
     filter?: Record<string, unknown>;
     rows?: ExecutionRow[];
+    detectedMode?: 'search' | 'chart';
+    responseMode?: 'detected' | 'forced';
   };
   chart?: ChartResponse;
+  suggestions?: AskSuggestion[];
 }
 
 interface ChatSession {
@@ -44,16 +54,9 @@ interface ChatSession {
   messages: ChatMessage[];
 }
 
-interface AiResult {
-  filter: Record<string, unknown>;
-  mode: 'executions';
-  count: number;
-  rows: ExecutionRow[];
-  _meta: { model: string; latencyMs: number; parser?: 'llm' | 'heuristic' };
-}
-
-const STORAGE_KEY = 'datos-copilot-v4-dark';
-const QUICK_PROMPTS = [
+const STORAGE_KEY = 'datos-copilot-v5-dark';
+const LEGACY_STORAGE_KEY = 'datos-copilot-v4-dark';
+const FALLBACK_PROMPTS = [
   'Próximas Vencidas',
   'Plan Manto. Anuales',
   'Preventivos Mayo',
@@ -62,11 +65,14 @@ const QUICK_PROMPTS = [
 export function FloatingAiChat() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
-  const [mode, setMode] = useState<AskMode>('search');
+  const [mode, setMode] = useState<AskMode>('auto');
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const inFlightRequestIdRef = useRef<string | null>(null);
+  const welcomedSessionIdsRef = useRef<Set<string>>(new Set());
+  const [pendingRequest, setPendingRequest] = useState<PendingRequest | null>(null);
 
   const activeSession = useMemo(
     () => sessions.find((s) => s.id === activeId) ?? null,
@@ -82,14 +88,27 @@ export function FloatingAiChat() {
     return null;
   }, [activeSession]);
 
+  const sessionContext = useMemo<SessionContext>(() => {
+    if (!activeSession) return {};
+    for (let i = activeSession.messages.length - 1; i >= 0; i -= 1) {
+      const msg = activeSession.messages[i];
+      if (msg?.meta?.filter) return { lastFilter: msg.meta.filter, lastMode: 'search' };
+      if (msg?.chart?.spec.filter) return { lastFilter: msg.chart.spec.filter, lastMode: 'chart' };
+    }
+    return {};
+  }, [activeSession]);
+
+  const debugAi = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === 'ai';
+
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as ChatSession[];
         if (parsed && Array.isArray(parsed) && parsed.length > 0) {
           setSessions(parsed.sort((a, b) => b.updatedAt - a.updatedAt));
           setActiveId(parsed[0]?.id ?? null);
+          if (localStorage.getItem(LEGACY_STORAGE_KEY)) localStorage.removeItem(LEGACY_STORAGE_KEY);
           setHydrated(true);
           return;
         }
@@ -107,84 +126,52 @@ export function FloatingAiChat() {
   }, [sessions, hydrated]);
 
   const ask = useMutation({
-    mutationFn: ({ prompt }: { prompt: string; sessionId: string; askMode: AskMode }) =>
-      api<AiResult>('/api/ai/search', {
+    mutationFn: ({ prompt, askMode }: { prompt: string; sessionId: string; askMode: AskMode; silent?: boolean; requestId: string }) =>
+      api<AskResponse>('/api/ai/ask', {
         method: 'POST',
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({
+          prompt,
+          sessionContext,
+          override: askMode === 'auto' ? undefined : askMode,
+        }),
       }),
     onSuccess: (result, vars) => {
-      appendMessageToSession(vars.sessionId, 'user', vars.prompt);
-      appendMessageToSession(
-        vars.sessionId,
-        'assistant',
-        result.count === 0 ? 'No encontré coincidencias para esos filtros.' : `El reporte fue generado con éxito (${result.count} tareas).`,
-        {
-          model: result._meta.model,
-          latencyMs: result._meta.latencyMs,
-          parser: result._meta.parser,
-          count: result.count,
-          mode: result.mode,
-          rows: result.rows,
-          filter: result.filter,
-        }
-      );
+      if (!vars.silent && vars.prompt.trim()) appendMessageToSession(vars.sessionId, 'user', vars.prompt);
+      appendAskResponse(vars.sessionId, result);
       setInput('');
+      clearPending(vars.requestId);
     },
     onError: (error, vars) => {
-      appendMessageToSession(vars.sessionId, 'user', vars.prompt);
+      if (!vars.silent && vars.prompt.trim()) appendMessageToSession(vars.sessionId, 'user', vars.prompt);
       const msg = error instanceof ApiError
           ? `Error ${error.status}: ${(error.body as any)?.message ?? error.message}`
           : 'Sistema inalcanzable. Intenta nuevamente.';
       appendMessageToSession(vars.sessionId, 'assistant', msg);
+      clearPending(vars.requestId);
     },
+    onSettled: (_result, _error, vars) => clearPending(vars.requestId),
   });
 
-  const askChart = useMutation({
-    mutationFn: ({ prompt }: { prompt: string; sessionId: string }) =>
-      api<ChartResponse>('/api/ai/chart', {
-        method: 'POST',
-        body: JSON.stringify({ prompt }),
-      }),
-    onSuccess: (result, vars) => {
-      appendMessageToSession(vars.sessionId, 'user', vars.prompt);
-      const title = result.spec.title ?? `Gráfico (${result.spec.chartType}) — ${result.spec.groupBy} / ${result.spec.metric}`;
-      const summary = result.data.length === 0
-        ? 'Sin datos para esos filtros.'
-        : `${title}. ${result.data.length} categorías, total ${result.total.count} ejecuciones.`;
-      appendMessageToSession(
-        vars.sessionId,
-        'assistant',
-        summary,
-        undefined,
-        result,
-      );
-      setInput('');
-    },
-    onError: (error, vars) => {
-      appendMessageToSession(vars.sessionId, 'user', vars.prompt);
-      const body = error instanceof ApiError ? (error.body as any) : null;
-      const msg = body?.message
-        ? `Error: ${body.message}${body.hint ? ` — ${body.hint}` : ''}`
-        : 'No se pudo generar el gráfico.';
-      appendMessageToSession(vars.sessionId, 'assistant', msg);
-    },
-  });
-
-  const pending = ask.isPending || askChart.isPending;
+  const pending = Boolean(pendingRequest);
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [activeSession?.messages.length, pending, open]);
 
+  useEffect(() => {
+    if (!open || !activeSession || inFlightRequestIdRef.current || activeSession.messages.length > 0) return;
+    if (welcomedSessionIdsRef.current.has(activeSession.id)) return;
+    welcomedSessionIdsRef.current.add(activeSession.id);
+    startAsk({ prompt: '', sessionId: activeSession.id, askMode: 'auto', silent: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, activeSession?.id]);
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const prompt = input.trim();
-    if (!prompt || !activeSession || pending) return;
-    if (mode === 'chart') {
-      askChart.mutate({ prompt, sessionId: activeSession.id });
-    } else {
-      ask.mutate({ prompt, sessionId: activeSession.id, askMode: mode });
-    }
+    if (!prompt || !activeSession || inFlightRequestIdRef.current) return;
+    welcomedSessionIdsRef.current.add(activeSession.id);
+    startAsk({ prompt, sessionId: activeSession.id, askMode: mode });
   };
 
   const createNewSession = () => {
@@ -194,16 +181,109 @@ export function FloatingAiChat() {
     setInput('');
   };
 
+  const runPrompt = (prompt: string) => {
+    if (!activeSession || inFlightRequestIdRef.current) return;
+    welcomedSessionIdsRef.current.add(activeSession.id);
+    startAsk({ prompt, sessionId: activeSession.id, askMode: mode });
+  };
+
+  const startAsk = ({
+    prompt,
+    sessionId,
+    askMode,
+    silent = false,
+  }: {
+    prompt: string;
+    sessionId: string;
+    askMode: AskMode;
+    silent?: boolean;
+  }) => {
+    if (inFlightRequestIdRef.current) return;
+    const requestId = crypto.randomUUID();
+    inFlightRequestIdRef.current = requestId;
+    setPendingRequest({ id: requestId, sessionId, askMode, silent });
+    ask.mutate({ prompt, sessionId, askMode, silent, requestId });
+  };
+
+  const clearPending = (requestId: string) => {
+    if (inFlightRequestIdRef.current !== requestId) return;
+    inFlightRequestIdRef.current = null;
+    setPendingRequest(null);
+  };
+
+  const appendAskResponse = (sessionId: string, result: AskResponse) => {
+    if (result.kind === 'greeting' || result.kind === 'clarify') {
+      appendMessageToSession(sessionId, 'assistant', result.payload.message, undefined, undefined, result.payload.suggestions);
+      return;
+    }
+
+    if (result.kind === 'error') {
+      appendMessageToSession(
+        sessionId,
+        'assistant',
+        `${result.payload.message}${result.payload.hint ? ` ${result.payload.hint}` : ''}`,
+        undefined,
+        undefined,
+        [{ type: 'prompt', label: 'Reintentar con vencidas', prompt: 'vencidas' }],
+      );
+      return;
+    }
+
+    if (result.kind === 'chart') {
+      const chart: ChartResponse = {
+        spec: result.payload.spec,
+        data: result.payload.data,
+        total: { value: result.payload.total.value ?? 0, count: result.payload.total.count },
+        _meta: {
+          model: result.meta.model,
+          latencyMs: result.meta.latencyMs,
+          parser: result.meta.parser,
+        },
+      };
+      const title = chart.spec.title ?? `Gráfico (${chart.spec.chartType}) — ${chart.spec.groupBy} / ${chart.spec.metric}`;
+      const summary = chart.data.length === 0
+        ? 'Sin datos para esos filtros.'
+        : `${title}. ${chart.data.length} categorías, total ${chart.total.count} ejecuciones.`;
+      appendMessageToSession(sessionId, 'assistant', summary, undefined, chart, result.payload.suggestions);
+      return;
+    }
+
+    if (result.kind === 'search') {
+      appendMessageToSession(
+        sessionId,
+        'assistant',
+        result.payload.count === 0
+          ? 'No encontré coincidencias exactas para esos filtros.'
+          : `El reporte fue generado con éxito (${result.payload.count} tareas).`,
+        {
+          model: result.meta.model,
+          latencyMs: result.meta.latencyMs,
+          parser: result.meta.parser,
+          classifier: result.meta.classifier,
+          count: result.payload.count,
+          mode: 'executions',
+          rows: result.payload.rows,
+          filter: result.payload.filter,
+          detectedMode: 'search',
+          responseMode: result.mode,
+        },
+        undefined,
+        result.payload.suggestions,
+      );
+    }
+  };
+
   const appendMessageToSession = (
     sessionId: string,
     role: Role,
     text: string,
     meta?: ChatMessage['meta'],
     chart?: ChatMessage['chart'],
+    suggestions?: ChatMessage['suggestions'],
   ) => {
     setSessions((prev) => prev.map((s) => {
       if (s.id !== sessionId) return s;
-      const nm: ChatMessage = { id: crypto.randomUUID(), role, text, at: Date.now(), meta, chart };
+      const nm: ChatMessage = { id: crypto.randomUUID(), role, text, at: Date.now(), meta, chart, suggestions };
       const nextTitle = s.messages.length === 0 && role === 'user' ? text.slice(0, 30) : s.title;
       return { ...s, title: nextTitle, updatedAt: Date.now(), messages: [...s.messages, nm].slice(-50) };
     }).sort((a, b) => b.updatedAt - a.updatedAt));
@@ -236,8 +316,12 @@ export function FloatingAiChat() {
                 </div>
                 <div>
                   <h2 className="text-base font-bold text-white tracking-tight">Copilot de Mantención</h2>
-                  <p className="text-[12px] font-medium text-brand-300">
-                    {latestMeta?.model ? `Modelo activo: ${latestMeta.model}` : 'Asistente de Inteligencia Automática'}
+                  <p className="text-[12px] font-medium text-slate-400">
+                    {debugAi && latestMeta?.model
+                      ? `Modelo activo: ${latestMeta.model}`
+                      : pending
+                        ? 'Procesando consulta...'
+                        : `Listo · ${mode === 'auto' ? 'Auto-detect' : 'Manual'}`}
                   </p>
                 </div>
               </div>
@@ -269,6 +353,13 @@ export function FloatingAiChat() {
             <div className="mt-3 inline-flex rounded-lg border border-slate-700/60 bg-[#0a0f1c] p-1 text-[12px] font-semibold">
               <button
                 type="button"
+                onClick={() => setMode('auto')}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 transition-all ${mode === 'auto' ? 'bg-slate-700 text-white shadow-[inset_0_1px_rgba(255,255,255,0.25)]' : 'text-slate-400 hover:text-white'}`}
+              >
+                <Sparkles className="h-3.5 w-3.5" /> Auto
+              </button>
+              <button
+                type="button"
                 onClick={() => setMode('search')}
                 className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 transition-all ${mode === 'search' ? 'bg-brand-600 text-white shadow-[inset_0_1px_rgba(255,255,255,0.25)]' : 'text-slate-400 hover:text-white'}`}
               >
@@ -282,6 +373,11 @@ export function FloatingAiChat() {
                 <BarChart3 className="h-3.5 w-3.5" /> Gráfico
               </button>
             </div>
+            {mode === 'auto' && latestMeta?.detectedMode && (
+              <div className="mt-2 inline-flex rounded-full border border-slate-700 bg-slate-900/70 px-2.5 py-1 text-[11px] font-semibold text-slate-300">
+                Detectado: {latestMeta.detectedMode === 'chart' ? 'Gráfico' : 'Explorar'}
+              </div>
+            )}
           </div>
 
           {/* CHAT AREA */}
@@ -296,8 +392,8 @@ export function FloatingAiChat() {
                   Pregúntame sobre frecuencias mensuales, proyecciones de horas hombre o disponibilidad de equipos.
                 </p>
                 <div className="mt-8 flex flex-col gap-2 w-full">
-                  {QUICK_PROMPTS.map((q) => (
-                    <button key={q} onClick={() => setInput(q)} className="flex w-full items-center justify-between rounded-xl border border-slate-800 bg-[#1e293b]/50 px-4 py-3 text-left text-[13px] font-medium text-slate-300 transition-colors hover:bg-[#1e293b] hover:text-white">
+                  {FALLBACK_PROMPTS.map((q) => (
+                    <button key={q} onClick={() => runPrompt(q)} className="flex w-full items-center justify-between rounded-xl border border-slate-800 bg-[#1e293b]/50 px-4 py-3 text-left text-[13px] font-medium text-slate-300 transition-colors hover:bg-[#1e293b] hover:text-white">
                       <span>{q}</span>
                       <ChevronRight className="h-4 w-4 opacity-50" />
                     </button>
@@ -305,22 +401,30 @@ export function FloatingAiChat() {
                 </div>
               </div>
             ) : (
-              activeSession.messages.map(m => <MessageBubble key={m.id} message={m} />)
+              activeSession.messages.map(m => <MessageBubble key={m.id} message={m} onPrompt={runPrompt} />)
             )}
             
-            {pending && (
+            {pendingRequest && (
               <div className="flex w-full flex-col items-start fade-up gap-2">
                 <div className="flex items-center gap-3 px-4 py-3 rounded-2xl rounded-tl-sm bg-[#1e293b]/60 border border-slate-800">
                   <Bot className="h-4 w-4 text-brand-400 animate-pulse" />
                   <span className="text-[13px] font-medium text-slate-400">
-                    {mode === 'chart' ? 'Generando especificación de gráfico' : 'Consultando planificación'}<span className="typing-dots" />
+                    {pendingRequest.askMode === 'chart'
+                      ? 'Generando especificación de gráfico'
+                      : pendingRequest.silent
+                        ? 'Preparando contexto'
+                        : pendingRequest.askMode === 'auto'
+                          ? 'Detectando intención'
+                          : 'Consultando planificación'}<span className="typing-dots" />
                   </span>
                 </div>
+                {!pendingRequest.silent && (
                 <div className="w-full space-y-2">
                   <div className="skeleton h-3 w-3/4 rounded" />
                   <div className="skeleton h-3 w-1/2 rounded" />
                   <div className="skeleton h-24 w-full rounded-xl" />
                 </div>
+                )}
               </div>
             )}
           </div>
@@ -331,13 +435,13 @@ export function FloatingAiChat() {
               <input
                 value={input}
                 onChange={e => setInput(e.target.value)}
-                placeholder={mode === 'chart' ? 'Ej: HH planificadas por mes en 2026' : 'Ej: vencidas del PSR Pérez'}
+                placeholder={mode === 'chart' ? 'Ej: HH planificadas por mes en 2026' : mode === 'auto' ? 'Ej: hola, vencidas o gráfico HH por mes' : 'Ej: vencidas del PSR Pérez'}
                 className="w-full bg-transparent px-4 py-2.5 text-[14px] text-white outline-none placeholder:text-slate-500 font-medium"
               />
               <button
                 type="submit"
                 disabled={pending || input.trim().length === 0}
-                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white disabled:opacity-30 disabled:grayscale transition-all hover:scale-105 active:scale-95 shadow-[inset_0_1px_rgba(255,255,255,0.2)] ${mode === 'chart' ? 'bg-gradient-to-tr from-indigo-600 to-purple-500' : 'bg-gradient-to-tr from-brand-600 to-brand-500'}`}
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white disabled:opacity-30 disabled:grayscale transition-all hover:scale-105 active:scale-95 shadow-[inset_0_1px_rgba(255,255,255,0.2)] ${mode === 'chart' ? 'bg-gradient-to-tr from-indigo-600 to-purple-500' : mode === 'auto' ? 'bg-gradient-to-tr from-slate-700 to-brand-600' : 'bg-gradient-to-tr from-brand-600 to-brand-500'}`}
               >
                 {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizonal className="h-4 w-4" />}
               </button>
@@ -350,7 +454,7 @@ export function FloatingAiChat() {
   );
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({ message, onPrompt }: { message: ChatMessage; onPrompt: (prompt: string) => void }) {
   const isUser = message.role === 'user';
   const m = message.meta;
   const chart = message.chart;
@@ -462,6 +566,22 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           </div>
         )}
 
+        {!isUser && message.suggestions && message.suggestions.length > 0 && (
+          <div className="mt-3 flex flex-col gap-2">
+            {message.suggestions.map((suggestion) => (
+              <button
+                key={`${suggestion.type}-${suggestion.label}`}
+                type="button"
+                onClick={() => onPrompt(promptFromSuggestion(suggestion))}
+                className="flex w-full items-center justify-between rounded-lg border border-slate-700/70 bg-[#0a0f1c]/70 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 transition-colors hover:border-brand-500/50 hover:bg-brand-600/10 hover:text-white"
+              >
+                <span className="truncate">{suggestion.label}</span>
+                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+              </button>
+            ))}
+          </div>
+        )}
+
         {!isUser && m && (
           <div className="mt-3 flex items-center justify-between border-t border-slate-800/80 pt-2 text-[10px] text-slate-500 font-mono">
             <span className="truncate pr-2" title={m.model}>🤖 {m.model} ({m.latencyMs}ms)</span>
@@ -476,6 +596,11 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 }
 
 const CHART_PALETTE = ['#38bdf8', '#8b5cf6', '#f472b6', '#34d399', '#facc15', '#fb923c', '#60a5fa', '#a78bfa', '#f87171', '#2dd4bf'];
+
+function promptFromSuggestion(suggestion: AskSuggestion): string {
+  if (suggestion.type === 'prompt') return suggestion.prompt;
+  return suggestion.label;
+}
 
 function ChartView({ chart }: { chart: ChartResponse }) {
   const data = chart.data.map((d) => ({ name: d.key, value: d.value, count: d.count }));

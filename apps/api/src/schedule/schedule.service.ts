@@ -12,6 +12,8 @@ import type {
   ExportExecutionsDto,
   GroupExecutionsDto,
   ListExecutionsDto,
+  PlantListDto,
+  PlantSortField,
   PipelineDto,
   UpdateSavedViewDto,
 } from './schedule.dto';
@@ -28,6 +30,8 @@ const TASK_SELECT = {
   equipo: true,
   hhReal: true,
   centroPlanificacion: true,
+  ptoTbjoResponsable: true,
+  comentarios: true,
 } as const;
 
 const EXECUTION_STATUSES: ExecStatus[] = [
@@ -81,6 +85,38 @@ type SavedViewFilterMutation = ExecutionFilterQuery & {
 type ExecutionListRow = Prisma.TaskExecutionGetPayload<{
   include: { task: { select: typeof TASK_SELECT } };
 }>;
+
+type PlantTaskRef = {
+  id: string;
+  descPosicionMant: string | null;
+  denomObjetoTecnico: string | null;
+  ubicacionTecnica: string | null;
+  denomUbicacionTecnica: string | null;
+  indicadorAbc: string | null;
+  psr: string | null;
+  centroPlanificacion: string | null;
+  ptoTbjoResponsable: string | null;
+  comentarios: string | null;
+};
+
+type PlantAccumulator = {
+  key: string;
+  name: string;
+  locationCode: string | null;
+  centroPlanificacion: string | null;
+  psr: string | null;
+  executionCount: number;
+  taskIds: Set<string>;
+  interventionKeys: Set<string>;
+  totalHhPlanned: number;
+  totalHhActual: number;
+  status: Record<ExecStatus, number>;
+  abc: Record<'A' | 'B' | 'C' | 'otros', number>;
+  abcAOverdue: number;
+  reviewFlags: number;
+  nextDueDate: Date | null;
+  responsibleAreas: Map<string, number>;
+};
 
 @Injectable()
 export class ScheduleService {
@@ -232,6 +268,99 @@ export class ScheduleService {
         makeBucket('nextMonth', 'Próximo mes', 'brand', nextMonth),
         makeBucket('inTwoMonths', 'En 2 meses', 'ok', inTwoMonths),
       ],
+    };
+  }
+
+  async plants(query: PlantListDto) {
+    await this.materialize.markOverdue();
+    const where = this.executionWhere(query);
+    const rows = await this.prisma.taskExecution.findMany({
+      where,
+      select: {
+        id: true,
+        dueDate: true,
+        status: true,
+        hhPlanned: true,
+        hhActual: true,
+        task: {
+          select: {
+            id: true,
+            descPosicionMant: true,
+            denomObjetoTecnico: true,
+            ubicacionTecnica: true,
+            denomUbicacionTecnica: true,
+            indicadorAbc: true,
+            psr: true,
+            frecuenciaCodigo: true,
+            equipo: true,
+            centroPlanificacion: true,
+            ptoTbjoResponsable: true,
+            comentarios: true,
+          },
+        },
+      },
+    });
+
+    const grouped = new Map<string, PlantAccumulator>();
+    for (const row of rows) {
+      const key = plantKey(row.task);
+      const prev = grouped.get(key) ?? makePlantAccumulator(key, row.task);
+      prev.executionCount += 1;
+      prev.totalHhPlanned += Number(row.hhPlanned);
+      prev.totalHhActual += Number(row.hhActual ?? 0);
+      prev.taskIds.add(row.task.id);
+      prev.interventionKeys.add(row.task.descPosicionMant ?? row.task.denomObjetoTecnico ?? row.task.id);
+      prev.abc[row.task.indicadorAbc === 'A' || row.task.indicadorAbc === 'B' || row.task.indicadorAbc === 'C' ? row.task.indicadorAbc : 'otros'] += 1;
+      prev.status[row.status] += 1;
+      if (row.status === ExecStatus.OVERDUE && row.task.indicadorAbc === 'A') prev.abcAOverdue += 1;
+      if (row.status === ExecStatus.PENDING && (!prev.nextDueDate || row.dueDate < prev.nextDueDate)) prev.nextDueDate = row.dueDate;
+      if (row.task.ptoTbjoResponsable?.trim()) {
+        const area = row.task.ptoTbjoResponsable.trim();
+        prev.responsibleAreas.set(area, (prev.responsibleAreas.get(area) ?? 0) + 1);
+      }
+      if (/inactiv|verificar|revisar/i.test(row.task.comentarios ?? '')) prev.reviewFlags += 1;
+      grouped.set(key, prev);
+    }
+
+    const plants = [...grouped.values()]
+      .map((plant) => {
+        const riskScore = plant.status.OVERDUE * 4 + plant.status.PENDING + plant.abcAOverdue * 3 + plant.reviewFlags * 2;
+        return {
+          key: plant.key,
+          name: plant.name,
+          locationCode: plant.locationCode,
+          centroPlanificacion: plant.centroPlanificacion,
+          psr: plant.psr,
+          executionCount: plant.executionCount,
+          taskCount: plant.taskIds.size,
+          interventionCount: plant.interventionKeys.size,
+          totalHhPlanned: round1(plant.totalHhPlanned),
+          totalHhActual: round1(plant.totalHhActual),
+          status: plant.status,
+          abcSplit: plant.abc,
+          abcAOverdue: plant.abcAOverdue,
+          reviewFlags: plant.reviewFlags,
+          riskScore,
+          nextDueDate: plant.nextDueDate?.toISOString() ?? null,
+          responsibleAreas: [...plant.responsibleAreas.entries()]
+            .map(([key, count]) => ({ key, count }))
+            .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
+            .slice(0, 4),
+        };
+      })
+      .sort(plantSorter(query.sortBy))
+      .slice(0, Math.min(query.take ?? 100, 500));
+
+    return {
+      count: grouped.size,
+      returned: plants.length,
+      totals: {
+        executions: rows.length,
+        hhPlanned: round1(rows.reduce((sum, row) => sum + Number(row.hhPlanned), 0)),
+        overdue: rows.filter((row) => row.status === ExecStatus.OVERDUE).length,
+        pending: rows.filter((row) => row.status === ExecStatus.PENDING).length,
+      },
+      rows: plants,
     };
   }
 
@@ -912,6 +1041,58 @@ function monthKey(year: number, month: number): string {
 
 function normalizeGroupKey(value: string | null | undefined): string {
   return value && value.trim() ? value.trim() : 'Sin dato';
+}
+
+function plantKey(task: PlantTaskRef): string {
+  return normalizeGroupKey(task.denomUbicacionTecnica ?? task.ubicacionTecnica);
+}
+
+function makePlantAccumulator(key: string, task: PlantTaskRef): PlantAccumulator {
+  return {
+    key,
+    name: normalizeGroupKey(task.denomUbicacionTecnica) === 'Sin dato' ? key : normalizeGroupKey(task.denomUbicacionTecnica),
+    locationCode: task.ubicacionTecnica?.trim() || null,
+    centroPlanificacion: task.centroPlanificacion?.trim() || null,
+    psr: task.psr?.trim() || null,
+    executionCount: 0,
+    taskIds: new Set<string>(),
+    interventionKeys: new Set<string>(),
+    totalHhPlanned: 0,
+    totalHhActual: 0,
+    status: {
+      [ExecStatus.PENDING]: 0,
+      [ExecStatus.OVERDUE]: 0,
+      [ExecStatus.DONE]: 0,
+      [ExecStatus.SKIPPED]: 0,
+    },
+    abc: { A: 0, B: 0, C: 0, otros: 0 },
+    abcAOverdue: 0,
+    reviewFlags: 0,
+    nextDueDate: null,
+    responsibleAreas: new Map<string, number>(),
+  };
+}
+
+function plantSorter(sortBy: PlantSortField | undefined) {
+  return (
+    a: { name: string; totalHhPlanned: number; status: Record<ExecStatus, number>; riskScore: number; nextDueDate: string | null },
+    b: { name: string; totalHhPlanned: number; status: Record<ExecStatus, number>; riskScore: number; nextDueDate: string | null },
+  ) => {
+    if (sortBy === 'name') return a.name.localeCompare(b.name);
+    if (sortBy === 'hh') return b.totalHhPlanned - a.totalHhPlanned || a.name.localeCompare(b.name);
+    if (sortBy === 'overdue') return b.status.OVERDUE - a.status.OVERDUE || b.riskScore - a.riskScore || a.name.localeCompare(b.name);
+    if (sortBy === 'nextDueDate') {
+      if (!a.nextDueDate && !b.nextDueDate) return a.name.localeCompare(b.name);
+      if (!a.nextDueDate) return 1;
+      if (!b.nextDueDate) return -1;
+      return a.nextDueDate.localeCompare(b.nextDueDate) || a.name.localeCompare(b.name);
+    }
+    return b.riskScore - a.riskScore || b.totalHhPlanned - a.totalHhPlanned || a.name.localeCompare(b.name);
+  };
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
 }
 
 function monthLabel(d: Date): string {
