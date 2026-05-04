@@ -30,8 +30,8 @@ export function AiSearch() {
     <div className="bg-white border rounded-xl p-4 space-y-3">
       <h2 className="font-medium">Búsqueda inteligente</h2>
       <p className="text-xs text-slate-500">
-        Ej: <em>"qué hay vencido del PSR Pérez"</em>, <em>"próximos 30 días equipo bomba"</em>,{' '}
-        <em>"tareas anuales del centro 1234 en 2027"</em>.
+        Ej: <em>qué hay vencido del PSR Pérez</em>, <em>próximos 30 días equipo bomba</em>,{' '}
+        <em>tareas anuales del centro 1234 en 2027</em>.
       </p>
       <form onSubmit={onSubmit} className="flex gap-2">
         <input

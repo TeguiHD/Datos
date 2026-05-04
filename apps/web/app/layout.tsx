@@ -1,21 +1,8 @@
 import type { Metadata } from 'next';
-import { IBM_Plex_Mono, Sora } from 'next/font/google';
 import { ThemeProvider } from 'next-themes';
 import { DensityProvider } from '@/lib/providers/DensityProvider';
 import { QueryProvider } from '@/lib/query-client';
 import './globals.css';
-
-const sora = Sora({
-  subsets: ['latin'],
-  variable: '--font-sora',
-  weight: ['400', '500', '600', '700'],
-});
-
-const plexMono = IBM_Plex_Mono({
-  subsets: ['latin'],
-  variable: '--font-plex-mono',
-  weight: ['400', '500'],
-});
 
 export const metadata: Metadata = {
   title: 'datos.nicoholas.dev',
@@ -26,7 +13,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es" suppressHydrationWarning>
-      <body className={`${sora.variable} ${plexMono.variable}`}>
+      <body>
         <ThemeProvider
           attribute="class"
           defaultTheme="light"

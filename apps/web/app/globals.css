@@ -4,6 +4,9 @@
 
 /* ── Design tokens semánticos ─────────────────────────────────────── */
 :root {
+  --font-sora:         'Trebuchet MS', 'Segoe UI', Arial, sans-serif;
+  --font-plex-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', 'Courier New', monospace;
+
   /* Superficies */
   --color-bg:          #f8fafc;
   --color-surface:     #ffffff;
