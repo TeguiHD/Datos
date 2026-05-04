@@ -1,7 +1,8 @@
 import { Type } from 'class-transformer';
-import { EquipmentType, PlanFrequency, PlantStatus } from '@prisma/client';
+import { EquipmentType, ExecutionOutcome, OperationalExecutionStatus, PlanFrequency, PlantStatus } from '@prisma/client';
 import {
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsInt,
   IsNumber,
@@ -65,4 +66,43 @@ export class UpsertPlanTaskDto {
 
 export class GenerateExecutionsDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(84) months?: number;
+}
+
+export class ListOperationalExecutionsDto {
+  @IsOptional() @IsString() plantId?: string;
+  @IsOptional() @IsString() psr?: string;
+  @IsOptional() @IsEnum(OperationalExecutionStatus) status?: OperationalExecutionStatus;
+  @IsOptional() @IsString() @Length(0, 1) abc?: string;
+  @IsOptional() @IsDateString() from?: string;
+  @IsOptional() @IsDateString() to?: string;
+  @IsOptional() @IsString() q?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(500) take?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) skip?: number;
+}
+
+export class RegisterExecutionDto {
+  @IsEnum(ExecutionOutcome) outcome!: ExecutionOutcome;
+  @IsOptional() @IsDateString() doneDate?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(10000) hhActual?: number;
+  @IsOptional() @IsString() @Length(0, 2000) comment?: string;
+  @IsOptional() @IsString() @Length(0, 1000) skipReason?: string;
+  @IsOptional() @IsDateString() postponedTo?: string;
+  @IsOptional() @IsBoolean() skipWithoutReschedule?: boolean;
+}
+
+export class RejectExecutionDto {
+  @IsString() @Length(1, 1000) reason!: string;
+}
+
+export class PostponeExecutionDto {
+  @IsDateString() postponedTo!: string;
+  @IsString() @Length(1, 1000) reason!: string;
+}
+
+export class ReopenExecutionDto {
+  @IsString() @Length(1, 1000) reason!: string;
+}
+
+export class EvidenceDescriptionDto {
+  @IsOptional() @IsString() @Length(0, 500) description?: string;
 }

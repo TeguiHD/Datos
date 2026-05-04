@@ -37,7 +37,7 @@ export function middleware(req: NextRequest) {
     `media-src 'self' data: blob:`,
     `font-src 'self' data:`,
     `style-src 'self' 'unsafe-inline'`,
-    `script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com${isDev ? " 'unsafe-eval'" : ''}`,
+    `script-src 'self' 'nonce-${nonce}' 'unsafe-inline' https://static.cloudflareinsights.com${isDev ? " 'unsafe-eval'" : ''}`,
     `connect-src ${connectSrc}`,
     `object-src 'none'`,
     `upgrade-insecure-requests`,

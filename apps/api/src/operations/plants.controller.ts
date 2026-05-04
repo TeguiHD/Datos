@@ -15,13 +15,25 @@ export class PlantsController {
   constructor(private plants: PlantsService) {}
 
   @Get()
-  list(@Query() query: ListPlantsDto) {
-    return this.plants.list(query);
+  list(@CurrentUser() user: { role: Role }, @Query() query: ListPlantsDto) {
+    return this.plants.list(user, query);
+  }
+
+  @Get(':psr/resumen')
+  summary(@CurrentUser() user: { role: Role }, @Param('psr') psr: string) {
+    return this.plants.summary(user, psr);
+  }
+
+  @Get(':psr/historico')
+  history(@CurrentUser() user: { role: Role }, @Param('psr') psr: string, @Query('take') take?: string) {
+    const n = take ? Number(take) : undefined;
+    const safeTake = n !== undefined && Number.isFinite(n) ? Math.min(Math.max(Math.floor(n), 1), 200) : undefined;
+    return this.plants.history(user, psr, safeTake);
   }
 
   @Get(':psr')
-  byPsr(@Param('psr') psr: string) {
-    return this.plants.byPsr(psr);
+  byPsr(@CurrentUser() user: { role: Role }, @Param('psr') psr: string) {
+    return this.plants.byPsr(user, psr);
   }
 
   @Post()

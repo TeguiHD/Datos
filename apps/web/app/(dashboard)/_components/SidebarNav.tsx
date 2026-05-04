@@ -2,7 +2,9 @@ import {
   BarChart3,
   BrainCircuit,
   Calendar,
+  ClipboardCheck,
   FileUp,
+  Factory,
   LayoutDashboard,
   ListTodo,
   ScrollText,
@@ -21,8 +23,10 @@ export function SidebarNav({ collapsed }: SidebarNavProps) {
     <nav className="custom-scrollbar flex flex-1 flex-col gap-1 overflow-y-auto py-2">
       <SidebarSection label="Planificación" collapsed={collapsed}>
         <NavItem href="/dashboard" label="Resumen" icon={LayoutDashboard} collapsed={collapsed} exactMatch />
+        <NavItem href="/dashboard/plantas" label="Plantas" icon={Factory} collapsed={collapsed} />
         <NavItem href="/dashboard/tareas" label="Tareas" icon={ListTodo} collapsed={collapsed} />
         <NavItem href="/dashboard/cronograma" label="Cronograma" icon={Calendar} collapsed={collapsed} />
+        <NavItem href="/dashboard/revisiones" label="Revisiones" icon={ClipboardCheck} collapsed={collapsed} />
       </SidebarSection>
 
       <SidebarSection label="Análisis" collapsed={collapsed}>

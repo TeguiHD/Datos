@@ -19,6 +19,7 @@ import { api, ApiError } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ExecutionPanel } from './_components/ExecutionPanel';
 import {
   Sheet,
   SheetContent,
@@ -323,10 +324,15 @@ function PlantCard({ plant, canWrite, onOpen }: { plant: PlantRow; canWrite: boo
           <CalendarClock className="size-3.5" />
           {plant.nextDueDate ? DATE.format(new Date(plant.nextDueDate)) : 'Sin ejecuciones'}
         </span>
-        <Button size="sm" variant={canWrite ? 'default' : 'outline'} onClick={onOpen}>
-          {canWrite ? <Pencil data-icon="inline-start" /> : <Eye data-icon="inline-start" />}
-          {canWrite ? 'Gestionar' : 'Ver'}
-        </Button>
+        <div className="flex shrink-0 gap-2">
+          <Button size="sm" variant="outline" asChild>
+            <a href={`/dashboard/plantas/${encodeURIComponent(plant.psr)}`}>Detalle</a>
+          </Button>
+          <Button size="sm" variant={canWrite ? 'default' : 'outline'} onClick={onOpen}>
+            {canWrite ? <Pencil data-icon="inline-start" /> : <Eye data-icon="inline-start" />}
+            {canWrite ? 'Gestionar' : 'Ver'}
+          </Button>
+        </div>
       </div>
     </article>
   );
@@ -366,7 +372,7 @@ function PlantDrawer({
 }) {
   const queryClient = useQueryClient();
   const isEditing = Boolean(psr);
-  const [tab, setTab] = useState<'general' | 'equipment' | 'plan'>('general');
+  const [tab, setTab] = useState<'general' | 'equipment' | 'plan' | 'executions'>('general');
   const [form, setForm] = useState({
     psr: '',
     name: '',
@@ -458,6 +464,9 @@ function PlantDrawer({
           </TabButton>
           <TabButton active={tab === 'plan'} onClick={() => setTab('plan')} disabled={!isEditing} icon={<ClipboardList className="size-4" />}>
             Plan {isEditing ? `(${planTasks.length})` : ''}
+          </TabButton>
+          <TabButton active={tab === 'executions'} onClick={() => setTab('executions')} disabled={!isEditing} icon={<CalendarClock className="size-4" />}>
+            Ejecuciones
           </TabButton>
         </div>
 
@@ -583,6 +592,8 @@ function PlantDrawer({
             {tab === 'plan' && psr && (
               <PlanPanel psr={psr} equipment={equipment} tasks={planTasks} canWrite={canWrite} onChanged={() => detail.refetch()} />
             )}
+
+            {tab === 'executions' && psr && <ExecutionPanel psr={psr} canWrite={canWrite} />}
           </>
         )}
       </SheetContent>

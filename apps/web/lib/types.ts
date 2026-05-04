@@ -155,6 +155,38 @@ export interface WhatsNextResult {
   buckets: WhatsNextBucket[];
 }
 
+export interface PlantOperationalRow {
+  key: string;
+  name: string;
+  locationCode: string | null;
+  centroPlanificacion: string | null;
+  psr: string | null;
+  executionCount: number;
+  taskCount: number;
+  interventionCount: number;
+  totalHhPlanned: number;
+  totalHhActual: number;
+  status: Record<ExecStatus, number>;
+  abcSplit: { A: number; B: number; C: number; otros: number };
+  abcAOverdue: number;
+  reviewFlags: number;
+  riskScore: number;
+  nextDueDate: string | null;
+  responsibleAreas: { key: string; count: number }[];
+}
+
+export interface PlantOperationalList {
+  count: number;
+  returned: number;
+  totals: {
+    executions: number;
+    hhPlanned: number;
+    overdue: number;
+    pending: number;
+  };
+  rows: PlantOperationalRow[];
+}
+
 export interface ChartSpec {
   chartType: 'bar' | 'line' | 'area' | 'pie';
   groupBy: 'abc' | 'frecuencia' | 'psr' | 'centroPlanificacion' | 'status' | 'month' | 'year';
@@ -174,6 +206,60 @@ export interface ChartResponse {
   data: ChartDatum[];
   total: { value: number; count: number };
   _meta: { model: string; latencyMs: number; parser: 'llm' | 'heuristic' };
+}
+
+export type AskOverride = 'search' | 'chart';
+
+export interface SessionContext {
+  lastFilter?: Record<string, unknown>;
+  lastMode?: AskOverride;
+}
+
+export type AskSuggestion =
+  | { type: 'prompt'; label: string; prompt: string }
+  | { type: 'filterDelta'; label: string; filterDelta: Record<string, unknown>; count: number };
+
+export type AskResponse =
+  | {
+      kind: 'greeting' | 'clarify';
+      payload: { message: string; suggestions: AskSuggestion[] };
+      meta: AskMeta;
+    }
+  | {
+      kind: 'search';
+      payload: {
+        count: number;
+        rows: ExecutionRow[];
+        filter: Record<string, unknown>;
+        truncated?: boolean;
+        suggestions?: AskSuggestion[];
+      };
+      mode: 'detected' | 'forced';
+      meta: AskMeta;
+    }
+  | {
+      kind: 'chart';
+      payload: {
+        spec: ChartSpec;
+        data: ChartDatum[];
+        total: { value?: number; count: number };
+        suggestions?: AskSuggestion[];
+      };
+      mode: 'detected' | 'forced';
+      meta: AskMeta;
+    }
+  | {
+      kind: 'error';
+      payload: { message: string; code: string; hint?: string };
+      meta: AskMeta;
+    };
+
+export interface AskMeta {
+  model: string;
+  latencyMs: number;
+  parser: 'llm' | 'heuristic';
+  classifier: 'llm' | 'heuristic';
+  requestId: string;
 }
 
 export interface AiInsight {
