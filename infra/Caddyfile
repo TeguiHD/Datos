@@ -5,7 +5,7 @@
 	}
 }
 
-datos.nicoholas.dev {
+{$APP_DOMAIN} {
 	encode zstd gzip
 
 	tls {

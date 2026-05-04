@@ -18,3 +18,4 @@ idea.txt
 
 # Prisma
 apps/api/prisma/migrations/*/migration.sql.journal
+.superpowers/

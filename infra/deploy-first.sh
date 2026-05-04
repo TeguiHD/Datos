@@ -13,100 +13,36 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
+ENV_ABS="$(cd "$(dirname "$ENV_FILE")" && pwd)/$(basename "$ENV_FILE")"
+
 set -a
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 set +a
 
-required_vars=(
-  POSTGRES_USER
-  POSTGRES_PASSWORD
-  POSTGRES_DB
-  DATABASE_URL
-  NODE_ENV
-  PORT
-  WEB_ORIGIN
-  NEXT_PUBLIC_API_URL
-  JWT_SECRET
-  COOKIE_SECRET
-  CSRF_SECRET
-  PASSWORD_PEPPER
-  KEK_BASE64
-  CLOUDFLARE_API_TOKEN
-  ACME_EMAIL
-  SEED_SUPERADMIN_EMAIL
-  SEED_SUPERADMIN_PASSWORD
-  SEED_SUPERADMIN_EMAIL_2
-  SEED_SUPERADMIN_PASSWORD_2
-)
+export APP_DOMAIN="${APP_DOMAIN:-$DOMAIN}"
+export DATOS_ENV_FILE="$ENV_ABS"
 
-placeholder_patterns=(
-  "replace-with"
-  "change-me"
-  "CHANGE-THIS"
-  "example.com"
-)
-
-for key in "${required_vars[@]}"; do
-  value="${!key:-}"
-  if [[ -z "$value" ]]; then
-    echo "[error] missing required env var: $key"
-    exit 1
-  fi
-  for pat in "${placeholder_patterns[@]}"; do
-    if [[ "$value" == *"$pat"* ]]; then
-      echo "[error] env var looks like placeholder: $key"
-      exit 1
-    fi
-  done
-done
-
-if [[ "${SEED_SUPERADMIN_EMAIL,,}" == "${SEED_SUPERADMIN_EMAIL_2,,}" ]]; then
-  echo "[error] superadmin emails must be different"
-  exit 1
-fi
-
-if [[ "${#JWT_SECRET}" -lt 32 ]]; then
-  echo "[error] JWT_SECRET too short (< 32 chars)"
-  exit 1
-fi
-if [[ "${#COOKIE_SECRET}" -lt 32 ]]; then
-  echo "[error] COOKIE_SECRET too short (< 32 chars)"
-  exit 1
-fi
-if [[ "${#CSRF_SECRET}" -lt 32 ]]; then
-  echo "[error] CSRF_SECRET too short (< 32 chars)"
-  exit 1
-fi
-if [[ "${#PASSWORD_PEPPER}" -lt 32 ]]; then
-  echo "[error] PASSWORD_PEPPER too short (< 32 chars)"
-  exit 1
-fi
-
-if ! decoded_kek_len=$(printf '%s' "$KEK_BASE64" | base64 -d 2>/dev/null | wc -c | tr -d ' '); then
-  echo "[error] KEK_BASE64 is not valid base64"
-  exit 1
-fi
-if [[ "$decoded_kek_len" != "32" ]]; then
-  echo "[error] KEK_BASE64 must decode to exactly 32 bytes"
-  exit 1
-fi
+APP_DOMAIN="$APP_DOMAIN" DATOS_ENV_FILE="$DATOS_ENV_FILE" ./infra/check-env.sh "$ENV_FILE"
 
 compose() {
   docker compose -f infra/docker-compose.yml --env-file "$ENV_FILE" "$@"
 }
 
-echo "[1/6] Pull/build and start data services"
+echo "[1/7] Pull/build and start data services"
 compose up -d --build postgres redis
 
-echo "[2/6] Start app services"
+echo "[2/7] Prepare evidence volume"
+compose run --rm evidence-init
+
+echo "[3/7] Start app services"
 compose up -d --build api web
 compose build ops
 
-echo "[3/6] Apply Prisma migrations"
+echo "[4/7] Apply Prisma migrations"
 compose run --rm --user root ops sh -lc 'node_modules/.bin/prisma migrate deploy'
 
-echo "[4/6] Ensure bootstrap superadmins exist"
+echo "[5/7] Ensure bootstrap superadmins exist"
 missing_admins=$(compose run --rm --user root ops node -e "const {PrismaClient}=require('@prisma/client'); const p=new PrismaClient(); const emails=[process.env.SEED_SUPERADMIN_EMAIL, process.env.SEED_SUPERADMIN_EMAIL_2].map((e)=>String(e||'').trim().toLowerCase()); (async()=>{const users=await p.user.findMany({where:{email:{in:emails}},select:{email:true}}); const found=new Set(users.map((u)=>u.email.toLowerCase())); const missing=emails.filter((e)=>e && !found.has(e)); console.log(missing.join(','));})().catch((e)=>{console.error(e); process.exit(1);}).finally(()=>p.\$disconnect());" | tr -d '\r')
 if [[ -n "$missing_admins" ]]; then
   compose run --rm --user root ops sh -lc 'node_modules/.bin/tsx prisma/seed.ts'
@@ -115,10 +51,10 @@ else
   echo "[info] bootstrap superadmins already present, skipping seed"
 fi
 
-echo "[5/6] Start edge proxy"
+echo "[6/7] Start edge proxy"
 compose up -d --build caddy
 
-echo "[6/6] Status + health checks"
+echo "[7/7] Status + health checks"
 compose ps
 
 if curl -fsS --max-time 10 -H "Host: $DOMAIN" http://127.0.0.1/api/health >/tmp/datos-health.json; then

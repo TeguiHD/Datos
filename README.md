@@ -46,8 +46,13 @@ Ver [docs/SECURITY.md](docs/SECURITY.md). Checklist OWASP/NIST/CISA/MITRE aplica
 ssh deploy@45.55.214.153
 cd /opt/datos
 git pull
-cp -n infra/.env.example .env
-nano .env
+APP_DOMAIN=datos.nicoholas.dev \
+ACME_EMAIL=admin@datos.nicoholas.dev \
+CLOUDFLARE_API_TOKEN='paste-rotated-cloudflare-token-here' \
+SEED_SUPERADMIN_EMAIL='admin1@example.com' \
+SEED_SUPERADMIN_EMAIL_2='admin2@example.com' \
+./infra/generate-prod-env.sh .env
+./infra/check-env.sh .env
 ./infra/deploy-first.sh .env datos.nicoholas.dev
 ```
 

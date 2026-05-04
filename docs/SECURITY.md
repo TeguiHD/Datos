@@ -72,7 +72,8 @@ Antes del primer deploy, **rotar**:
 4. Password inicial de `nikoholas.lopetegui@gmail.com`
 5. `OPENROUTER_API_KEY` (si fue compartida fuera de un vault)
 6. `GROQ_API_KEY` (si fue compartida fuera de un vault)
-7. Cualquier credencial publicada en chats, tickets o documentos no cifrados
+7. `NVIDIA_API_KEY` (si fue compartida fuera de un vault)
+8. Cualquier credencial publicada en chats, tickets o documentos no cifrados
 
 Generar secrets:
 ```bash
