@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const nonce = btoa(crypto.randomUUID());
   const isDev = process.env.NODE_ENV !== 'production';
   const accessToken = req.cookies.get('access_token')?.value;
