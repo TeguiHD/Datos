@@ -240,6 +240,28 @@ describe('ExecutionsService', () => {
     });
   });
 
+  describe('start', () => {
+    it('transitions SCHEDULED to IN_PROGRESS and stamps startedAt', async () => {
+      const result = await service.start('user-1', 'exec-1', ctx);
+      expect(result.status).toBe(OperationalExecutionStatus.IN_PROGRESS);
+      expect(result.startedAt).toBeInstanceOf(Date);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'OPERATIONAL_EXECUTION_START' }),
+      );
+    });
+
+    it('rejects start when status is not SCHEDULED or POSTPONED', async () => {
+      prisma.store.set('exec-1', buildExecution({ status: OperationalExecutionStatus.APPROVED }));
+      await expect(service.start('user-1', 'exec-1', ctx)).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('allows starting a POSTPONED execution', async () => {
+      prisma.store.set('exec-1', buildExecution({ status: OperationalExecutionStatus.POSTPONED }));
+      const result = await service.start('user-1', 'exec-1', ctx);
+      expect(result.status).toBe(OperationalExecutionStatus.IN_PROGRESS);
+    });
+  });
+
   describe('reject', () => {
     it('records the reason and audit entry', async () => {
       prisma.store.set(

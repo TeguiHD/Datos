@@ -74,6 +74,38 @@ export class ExecutionsService {
     };
   }
 
+  async start(userId: string, id: string, ctx: RequestContext) {
+    const before = await this.findExecutionForMutation(id);
+    if (
+      before.status !== OperationalExecutionStatus.SCHEDULED &&
+      before.status !== OperationalExecutionStatus.POSTPONED
+    ) {
+      throw new BadRequestException('Only scheduled or postponed executions can be started');
+    }
+
+    const after = await this.prisma.operationalExecution.update({
+      where: { id },
+      data: {
+        status: OperationalExecutionStatus.IN_PROGRESS,
+        startedAt: new Date(),
+      },
+      include: this.executionInclude(),
+    });
+
+    await this.audit.record({
+      userId,
+      action: 'OPERATIONAL_EXECUTION_START',
+      entity: 'OperationalExecution',
+      entityId: id,
+      before,
+      after,
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+    });
+
+    return this.toExecutionDto(after);
+  }
+
   async register(userId: string, id: string, dto: RegisterExecutionDto, ctx: RequestContext) {
     const before = await this.findExecutionForMutation(id);
     const clean = sanitizeObject(dto);

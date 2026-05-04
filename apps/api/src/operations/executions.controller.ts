@@ -25,6 +25,12 @@ export class ExecutionsController {
     return this.executions.list(user, query);
   }
 
+  @Post(':id/iniciar')
+  @Roles(Role.SUPERADMIN)
+  start(@CurrentUser() user: { id: string }, @Param('id') id: string, @Req() req: Request) {
+    return this.executions.start(user.id, id, requestContext(req));
+  }
+
   @Post(':id/registrar')
   @Roles(Role.SUPERADMIN)
   register(@CurrentUser() user: { id: string }, @Param('id') id: string, @Body() body: RegisterExecutionDto, @Req() req: Request) {

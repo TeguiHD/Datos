@@ -6,12 +6,15 @@ import {
   BarChart3,
   BrainCircuit,
   Calendar,
+  CalendarDays,
   ClipboardCheck,
+  Factory,
   FileUp,
   LayoutDashboard,
   ListTodo,
   Search,
   Settings,
+  Sun,
 } from 'lucide-react';
 import {
   Command,
@@ -33,10 +36,13 @@ interface CommandPaletteProps {
 }
 
 const ROUTES = [
+  { href: '/dashboard/hoy', label: 'Hoy', icon: Sun },
+  { href: '/dashboard/semana', label: 'Semana', icon: CalendarDays },
+  { href: '/dashboard/revisiones', label: 'Revisiones', icon: ClipboardCheck },
   { href: '/dashboard', label: 'Resumen', icon: LayoutDashboard },
+  { href: '/dashboard/plantas', label: 'Plantas', icon: Factory },
   { href: '/dashboard/tareas', label: 'Tareas', icon: ListTodo },
   { href: '/dashboard/cronograma', label: 'Cronograma', icon: Calendar },
-  { href: '/dashboard/revisiones', label: 'Revisiones', icon: ClipboardCheck },
   { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/dashboard/graficos', label: 'Gráficos IA', icon: BrainCircuit },
   { href: '/dashboard/importacion', label: 'Importación', icon: FileUp },

@@ -12,9 +12,12 @@ import { UserMenu } from './UserMenu';
 
 const BREADCRUMB_MAP: Record<string, string> = {
   '/dashboard': 'Resumen',
+  '/dashboard/hoy': 'Hoy',
+  '/dashboard/semana': 'Semana',
   '/dashboard/tareas': 'Tareas',
   '/dashboard/cronograma': 'Cronograma',
   '/dashboard/revisiones': 'Revisiones',
+  '/dashboard/plantas': 'Plantas',
   '/dashboard/analytics': 'Analytics',
   '/dashboard/graficos': 'Gráficos IA',
   '/dashboard/importacion': 'Importación',

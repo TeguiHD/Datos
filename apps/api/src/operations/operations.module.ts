@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { DashboardController } from './dashboard.controller';
+import { DashboardService } from './dashboard.service';
 import { EquipmentController } from './equipment.controller';
 import { EquipmentService } from './equipment.service';
 import { EvidenceController } from './evidence.controller';
@@ -15,7 +17,22 @@ import { PlantsService } from './plants.service';
 
 @Module({
   imports: [PrismaModule, AuditModule],
-  controllers: [PlantsController, EquipmentController, PlanController, ExecutionsController, EvidenceController],
-  providers: [PlantsService, EquipmentService, PlanService, ExecutionsService, EvidenceService, EvidenceStorage],
+  controllers: [
+    PlantsController,
+    EquipmentController,
+    PlanController,
+    ExecutionsController,
+    EvidenceController,
+    DashboardController,
+  ],
+  providers: [
+    PlantsService,
+    EquipmentService,
+    PlanService,
+    ExecutionsService,
+    EvidenceService,
+    EvidenceStorage,
+    DashboardService,
+  ],
 })
 export class OperationsModule {}

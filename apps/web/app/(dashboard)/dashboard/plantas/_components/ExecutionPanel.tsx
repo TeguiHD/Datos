@@ -279,7 +279,6 @@ function ExecutionWorkPanel({
   const [comment, setComment] = useState(execution.comment ?? '');
   const [skipReason, setSkipReason] = useState(execution.skipReason ?? '');
   const [postponedTo, setPostponedTo] = useState('');
-  const [autoApprove, setAutoApprove] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [rejectReason, setRejectReason] = useState('');
 
@@ -290,7 +289,6 @@ function ExecutionWorkPanel({
     setComment(execution.comment ?? '');
     setSkipReason(execution.skipReason ?? '');
     setPostponedTo(execution.postponedTo ? toInputDate(new Date(execution.postponedTo)) : '');
-    setAutoApprove(false);
     setFiles([]);
     setRejectReason('');
   }, [execution]);
@@ -307,7 +305,6 @@ function ExecutionWorkPanel({
           skipReason: outcome === 'NOT_DONE' ? skipReason.trim() || undefined : undefined,
           postponedTo: outcome === 'NOT_DONE' && postponedTo ? postponedTo : undefined,
           skipWithoutReschedule: outcome === 'NOT_DONE' && !postponedTo ? true : undefined,
-          autoApprove: outcome !== 'NOT_DONE' ? autoApprove : undefined,
         }),
       });
 
@@ -318,6 +315,11 @@ function ExecutionWorkPanel({
         await api(`/api/ejecuciones/${execution.id}/evidencias`, { method: 'POST', body });
       }
     },
+    onSuccess: onChanged,
+  });
+
+  const start = useMutation({
+    mutationFn: () => api(`/api/ejecuciones/${execution.id}/iniciar`, { method: 'POST' }),
     onSuccess: onChanged,
   });
 
@@ -475,13 +477,9 @@ function ExecutionWorkPanel({
           </Field>
 
           {outcome !== 'NOT_DONE' && (
-            <label className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">
-              <span>
-                <span className="font-medium text-text">Guardar y aprobar de inmediato</span>
-                <span className="block text-xs text-ds-muted">Por defecto el cierre queda pendiente de revision. Activar solo si tu rol autoriza saltar el flujo.</span>
-              </span>
-              <input type="checkbox" checked={autoApprove} onChange={(event) => setAutoApprove(event.target.checked)} className="size-4" />
-            </label>
+            <p className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs text-ds-muted">
+              Al guardar, la ejecución queda como <span className="font-medium text-text">pendiente de revisión</span>. La aprobación es una acción explícita posterior desde la bandeja Revisiones.
+            </p>
           )}
 
           {files.length > 0 && (
@@ -493,7 +491,7 @@ function ExecutionWorkPanel({
           <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
             <Button type="submit" disabled={register.isPending}>
               <FileCheck2 data-icon="inline-start" />
-              {register.isPending ? 'Guardando...' : autoApprove && outcome !== 'NOT_DONE' ? 'Guardar y aprobar' : 'Guardar registro'}
+              {register.isPending ? 'Guardando...' : 'Guardar registro'}
             </Button>
           </div>
           {register.isError && <ErrorBox error={register.error} />}
@@ -502,6 +500,18 @@ function ExecutionWorkPanel({
         <p className="mt-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-ds-muted">
           Tu rol actual permite revisar esta ejecucion, pero no modificarla.
         </p>
+      )}
+
+      {canWrite && (execution.status === 'SCHEDULED' || execution.status === 'POSTPONED') && (
+        <div className="mt-4 flex flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-ds-muted">
+            ¿La cuadrilla ya está en terreno? Marca <span className="font-medium text-text">en curso</span> para visibilidad operacional.
+          </p>
+          <Button type="button" size="sm" variant="outline" onClick={() => start.mutate()} disabled={start.isPending}>
+            <Clock3 data-icon="inline-start" />
+            {start.isPending ? 'Iniciando...' : 'Iniciar ejecución'}
+          </Button>
+        </div>
       )}
 
       {canWrite && (execution.status === 'DONE_PENDING_APPROVAL' || execution.status === 'REJECTED' || execution.status === 'APPROVED') && (
