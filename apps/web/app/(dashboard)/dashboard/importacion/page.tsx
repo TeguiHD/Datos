@@ -153,8 +153,11 @@ export default function ImportacionPage() {
     <div className="space-y-5 fade-up">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.18em] text-ds-muted">Importación / Exportación</p>
-          <h1 className="text-2xl font-semibold text-text">Plantilla, dry-run y diff preview</h1>
+          <p className="text-[11px] uppercase tracking-[0.18em] text-ds-muted">Gestión</p>
+          <h1 className="text-2xl font-semibold text-text">Importar mantenciones</h1>
+          <p className="mt-1 text-sm text-ds-muted">
+            Carga el Excel de mantenciones: primero ves una vista previa y luego confirmas.
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" onClick={downloadTemplate} disabled={busy != null}>

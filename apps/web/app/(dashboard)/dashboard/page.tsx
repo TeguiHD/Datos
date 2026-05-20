@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, CalendarClock, ClipboardList, Factory } from 'lucide-react';
 import { api } from '@/lib/api';
 import { hh, int } from '@/lib/i18n/formatters';
-import { abcLabels, plantStatusLabels } from '@datos/shared-types';
+import { plantStatusLabels } from '@datos/shared-types';
 import { ComplianceGauge } from './_components/ComplianceGauge';
 import { AbcDonut } from './_components/AbcDonut';
 import { ForecastStrip } from './_components/ForecastStrip';
@@ -17,13 +17,13 @@ interface Kpis {
   doneCount: number;
   skippedCount: number;
   discCount: number;
-  abcSplit?: Array<{ indicadorAbc: string | null; _count: { _all: number } }>;
+  tipoSplit?: Array<{ tipo: string; _count: { _all: number } }>;
 }
 
-const ABC_COLORS: Record<string, string> = {
-  A: '#dc2626',
-  B: '#d97706',
-  C: '#2563eb',
+const TIPO_META: Record<string, { label: string; color: string }> = {
+  PREVENTIVA: { label: 'Preventiva', color: '#2563eb' },
+  CORRECTIVA: { label: 'Correctiva', color: '#d97706' },
+  PREDICTIVA: { label: 'Predictiva', color: '#7c3aed' },
 };
 
 interface PlantList {
@@ -53,13 +53,13 @@ export default function DashboardHome() {
   const compliance = dueExecutions > 0 ? (k!.doneCount + (k!.skippedCount ?? 0)) / (dueExecutions + (k!.skippedCount ?? 0)) : 0;
   const onTime = dueExecutions > 0 ? k!.doneCount / dueExecutions : 0;
 
-  const abcSlices = (k?.abcSplit ?? []).map((row) => {
-    const key = row.indicadorAbc ?? 'Otros';
+  const tipoSlices = (k?.tipoSplit ?? []).map((row) => {
+    const meta = TIPO_META[row.tipo];
     return {
-      key,
-      label: abcLabels[key as keyof typeof abcLabels] ?? 'Sin clasificar',
+      key: row.tipo,
+      label: meta?.label ?? row.tipo,
       value: row._count._all,
-      color: ABC_COLORS[key] ?? '#64748b',
+      color: meta?.color ?? '#64748b',
     };
   });
 
@@ -117,13 +117,10 @@ export default function DashboardHome() {
           </div>
 
           <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-            <h2 className="font-semibold text-text">Criticidad de las tareas</h2>
-            <p className="text-xs text-ds-muted">
-              Clasificación ABC de SAP: <span className="text-text">A</span> crítica ·{' '}
-              <span className="text-text">B</span> importante · <span className="text-text">C</span> estándar.
-            </p>
+            <h2 className="font-semibold text-text">Tipo de mantención</h2>
+            <p className="text-xs text-ds-muted">Preventiva, correctiva y predictiva.</p>
             <div className="mt-3 flex justify-center">
-              <AbcDonut slices={abcSlices} centerLabel="tareas" />
+              <AbcDonut slices={tipoSlices} centerLabel="mantenciones" />
             </div>
           </div>
         </div>

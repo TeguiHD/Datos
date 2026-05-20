@@ -1,11 +1,12 @@
 import {
   Calendar,
-  ClipboardCheck,
+  CalendarClock,
   Clock,
   FileSignature,
   FileUp,
   Factory,
   LayoutDashboard,
+  ListTodo,
   ShieldCheck,
   TrendingUp,
   Users,
@@ -34,6 +35,8 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: '/dashboard', label: 'Panel', icon: LayoutDashboard, exactMatch: true },
       { href: '/dashboard/plantas', label: 'Plantas', icon: Factory },
+      { href: '/dashboard/tareas', label: 'Mantenciones', icon: ListTodo },
+      { href: '/dashboard/semana', label: 'Agenda', icon: CalendarClock },
       { href: '/dashboard/cronograma', label: 'Cronograma', icon: Calendar },
       { href: '/dashboard/analytics', label: 'Análisis', icon: TrendingUp },
       { href: '/dashboard/reportes', label: 'Reportes', icon: FileSignature },
@@ -54,6 +57,6 @@ export const NAV_SECTIONS: NavSection[] = [
 export const BOTTOM_NAV: NavEntry[] = [
   { href: '/dashboard', label: 'Panel', icon: LayoutDashboard, exactMatch: true },
   { href: '/dashboard/plantas', label: 'Plantas', icon: Factory },
-  { href: '/dashboard/cronograma', label: 'Cronograma', icon: Calendar },
-  { href: '/dashboard/reportes', label: 'Reportes', icon: ClipboardCheck },
+  { href: '/dashboard/tareas', label: 'Mantenc.', icon: ListTodo },
+  { href: '/dashboard/semana', label: 'Agenda', icon: CalendarClock },
 ];

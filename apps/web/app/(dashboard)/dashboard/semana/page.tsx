@@ -1,193 +1,205 @@
 'use client';
 
-import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { CalendarDays, ChevronLeft, ChevronRight, Factory } from 'lucide-react';
+import Link from 'next/link';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle, CalendarClock, CheckCircle2 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { Badge } from '@/components/ui/badge';
+import { toast } from '@/lib/toast';
+import { hh as fmtHh, int } from '@/lib/i18n/formatters';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
-type OperationalExecutionStatus =
-  | 'SCHEDULED'
-  | 'IN_PROGRESS'
-  | 'DONE_PENDING_APPROVAL'
-  | 'APPROVED'
-  | 'REJECTED'
-  | 'SKIPPED'
-  | 'POSTPONED';
+type ExecStatus = 'PENDING' | 'OVERDUE' | 'DONE' | 'SKIPPED';
+type MaintType = 'PREVENTIVA' | 'CORRECTIVA' | 'PREDICTIVA';
 
-interface ExecutionRow {
+interface Row {
   id: string;
   dueDate: string;
-  status: OperationalExecutionStatus;
-  hhPlan: number;
-  hhActual: number | null;
-  evidenceCount: number;
-  planTask: {
-    id: string;
-    abc: string | null;
-    description: string;
-    equipment: { id: string; name: string; type: string } | null;
-    plant: { id: string; psr: string; name: string; area: string | null; color: string | null; visibleToViewer: boolean };
+  status: ExecStatus;
+  hhPlanned: string | number;
+  task: {
+    titulo: string | null;
+    descPosicionMant: string | null;
+    tipo: MaintType;
+    frecuenciaCodigo: string | null;
+    plant: { psr: string; name: string } | null;
   };
 }
 
-interface DashboardSemana {
-  weekStart: string;
-  weekEnd: string;
-  totalHhPlan: number;
-  totalItems: number;
-  days: Array<{
-    date: string;
-    weekday: number;
-    hhPlan: number;
-    items: ExecutionRow[];
-  }>;
+interface ExecList {
+  rows: Row[];
+  total: number;
 }
 
-const DAY_LONG = new Intl.DateTimeFormat('es-CL', { weekday: 'long' });
-const DATE_SHORT = new Intl.DateTimeFormat('es-CL', { day: '2-digit', month: 'short' });
-const RANGE = new Intl.DateTimeFormat('es-CL', { day: '2-digit', month: 'short', year: 'numeric' });
-const HH = new Intl.NumberFormat('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-
-const STATUS_TONE: Record<OperationalExecutionStatus, string> = {
-  SCHEDULED: 'border-[var(--color-border)] text-ds-muted',
-  IN_PROGRESS: 'border-ds-accent/30 bg-accent-dim text-ds-accent',
-  DONE_PENDING_APPROVAL: 'border-warn/30 bg-warn-dim text-warn',
-  APPROVED: 'border-ok/30 bg-ok-dim text-ok',
-  REJECTED: 'border-danger/30 bg-danger-dim text-danger',
-  SKIPPED: 'border-neutral-300 text-ds-muted',
-  POSTPONED: 'border-warn/30 bg-warn-dim text-warn',
+const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+const TYPE_CLS: Record<MaintType, string> = {
+  PREVENTIVA: 'bg-blue-100 text-blue-800',
+  CORRECTIVA: 'bg-amber-100 text-amber-800',
+  PREDICTIVA: 'bg-violet-100 text-violet-800',
 };
 
-export default function DashboardSemanaPage() {
-  const [offset, setOffset] = useState(0);
-  const params = useMemo(() => new URLSearchParams({ offset: String(offset) }).toString(), [offset]);
+const NOW = new Date();
+
+export default function AgendaPage() {
+  const qc = useQueryClient();
+  const [confirm, setConfirm] = useState<{ row: Row; action: 'DONE' | 'SKIPPED' } | null>(null);
 
   const data = useQuery({
-    queryKey: ['dashboard-semana', offset],
-    queryFn: () => api<DashboardSemana>(`/api/dashboard/semana?${params}`),
-    refetchInterval: 60_000,
+    queryKey: ['agenda'],
+    queryFn: () =>
+      api<ExecList>(
+        `/api/schedule/executions?yearFrom=${NOW.getUTCFullYear()}&monthFrom=1&yearTo=${NOW.getUTCFullYear() + 1}&monthTo=12&take=500`,
+      ),
   });
 
-  const headerLabel =
-    data.data && `${RANGE.format(new Date(data.data.weekStart))} – ${RANGE.format(new Date(data.data.weekEnd))}`;
+  const mutate = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: 'DONE' | 'SKIPPED' }) =>
+      api(`/api/schedule/executions/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+    onSuccess: (_d, v) => {
+      toast(v.status === 'DONE' ? 'Mantención completada' : 'Mantención omitida');
+      qc.invalidateQueries({ queryKey: ['agenda'] });
+      setConfirm(null);
+    },
+    onError: () => toast('No se pudo guardar', 'error'),
+  });
+
+  const groups = useMemo(() => {
+    const pend = (data.data?.rows ?? []).filter((r) => r.status === 'PENDING' || r.status === 'OVERDUE');
+    pend.sort((a, b) => +new Date(a.dueDate) - +new Date(b.dueDate));
+    const map = new Map<string, { label: string; rows: Row[] }>();
+    for (const r of pend) {
+      const d = new Date(r.dueDate);
+      const key = `${d.getUTCFullYear()}-${d.getUTCMonth()}`;
+      if (!map.has(key)) map.set(key, { label: `${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`, rows: [] });
+      map.get(key)!.rows.push(r);
+    }
+    return [...map.values()];
+  }, [data.data]);
+
+  const allRows = groups.flatMap((g) => g.rows);
+  const overdue = allRows.filter((r) => r.status === 'OVERDUE').length;
+  const pending = allRows.filter((r) => r.status === 'PENDING').length;
 
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-lg bg-accent-dim text-ds-accent">
-            <CalendarDays aria-hidden />
-          </span>
-          <div>
-            <h1 className="text-xl font-semibold">Semana</h1>
-            <p className="text-sm text-ds-muted">
-              {headerLabel ?? 'Cargando...'}
-              {data.data ? (
-                <span className="ml-2">
-                  · {data.data.totalItems} ejecuciones · {HH.format(data.data.totalHhPlan)} HH
-                </span>
-              ) : null}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => setOffset(offset - 1)}>
-            <ChevronLeft className="h-4 w-4" aria-hidden />
-            Anterior
-          </Button>
-          <Button size="sm" variant={offset === 0 ? 'default' : 'outline'} onClick={() => setOffset(0)}>
-            Esta semana
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => setOffset(offset + 1)}>
-            Siguiente
-            <ChevronRight className="h-4 w-4" aria-hidden />
-          </Button>
-        </div>
+    <div className="flex flex-col gap-4 fade-up">
+      <header>
+        <p className="text-[11px] uppercase tracking-[0.18em] text-ds-muted">Operación</p>
+        <h1 className="text-2xl font-semibold text-text">Agenda</h1>
+        <p className="mt-1 text-sm text-ds-muted">Mantenciones pendientes y vencidas de todas las plantas.</p>
       </header>
+
+      <div className="grid grid-cols-2 gap-2.5">
+        <article className="rounded-xl border border-danger/30 bg-[var(--color-surface)] p-3">
+          <div className="flex items-center justify-between text-ds-muted">
+            <p className="text-[10px] uppercase tracking-[0.16em]">Vencidas</p>
+            <AlertTriangle className="size-4" />
+          </div>
+          <p className="mt-2 text-xl font-semibold tabular-nums text-danger">{int(overdue)}</p>
+        </article>
+        <article className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+          <div className="flex items-center justify-between text-ds-muted">
+            <p className="text-[10px] uppercase tracking-[0.16em]">Pendientes</p>
+            <CalendarClock className="size-4" />
+          </div>
+          <p className="mt-2 text-xl font-semibold tabular-nums text-text">{int(pending)}</p>
+        </article>
+      </div>
 
       {data.isLoading ? (
-        <DaySkeletons />
-      ) : data.isError ? (
-        <ErrorBox onRetry={() => data.refetch()} />
-      ) : (
-        <section className="grid gap-3 lg:grid-cols-2 xl:grid-cols-7">
-          {data.data!.days.map((day) => (
-            <DayColumn key={day.date} day={day} />
-          ))}
-        </section>
-      )}
-    </div>
-  );
-}
-
-function DayColumn({ day }: { day: DashboardSemana['days'][number] }) {
-  const date = new Date(day.date);
-  const isWeekend = day.weekday === 0 || day.weekday === 6;
-  return (
-    <article
-      className={`flex flex-col gap-2 rounded-lg border border-[var(--color-border)] p-3 ${
-        isWeekend ? 'bg-[var(--color-surface-2)]' : 'bg-[var(--color-surface-1)]'
-      }`}
-    >
-      <header className="flex items-baseline justify-between">
-        <div>
-          <p className="text-xs uppercase text-ds-muted">{DAY_LONG.format(date)}</p>
-          <p className="text-sm font-semibold">{DATE_SHORT.format(date)}</p>
+        <div className="skeleton h-72 rounded-xl" />
+      ) : groups.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-10 text-center">
+          <p className="font-semibold text-text">Todo al día</p>
+          <p className="mt-1 text-sm text-ds-muted">No hay mantenciones pendientes ni vencidas.</p>
         </div>
-        <Badge variant="outline" className="text-xs tabular-nums">
-          {HH.format(day.hhPlan)} HH
-        </Badge>
-      </header>
-      <div className="flex flex-col gap-1.5">
-        {day.items.length === 0 ? (
-          <p className="text-xs text-ds-muted/70">—</p>
-        ) : (
-          day.items.map((item) => (
-            <Link
-              key={item.id}
-              href={`/dashboard/plantas/${encodeURIComponent(item.planTask.plant.psr)}`}
-              className="group flex flex-col gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2 text-xs transition-colors hover:border-ds-accent/40"
-            >
-              <div className="flex items-center justify-between gap-1">
-                <Badge variant="outline" className={`${STATUS_TONE[item.status]} text-[10px]`}>
-                  {item.planTask.abc ?? '—'}
-                </Badge>
-                <span className="tabular-nums text-ds-muted">{HH.format(item.hhPlan)}h</span>
+      ) : (
+        groups.map((g) => (
+          <section key={g.label} className="grid gap-2">
+            <h2 className="text-sm font-semibold text-ds-muted">{g.label}</h2>
+            {g.rows.map((r) => (
+              <div
+                key={r.id}
+                className={`rounded-xl border bg-[var(--color-surface)] p-3 ${
+                  r.status === 'OVERDUE' ? 'border-danger/40' : 'border-[var(--color-border)]'
+                }`}
+              >
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span
+                    className={`rounded px-2 py-0.5 text-[11px] font-medium ${
+                      r.status === 'OVERDUE' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'
+                    }`}
+                  >
+                    {r.status === 'OVERDUE' ? 'Vencida' : 'Pendiente'}
+                  </span>
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${TYPE_CLS[r.task.tipo] ?? TYPE_CLS.PREVENTIVA}`}
+                  >
+                    {r.task.tipo === 'CORRECTIVA'
+                      ? 'Correctiva'
+                      : r.task.tipo === 'PREDICTIVA'
+                        ? 'Predictiva'
+                        : 'Preventiva'}
+                  </span>
+                  {r.task.plant && <span className="text-[11px] text-ds-muted">· {r.task.plant.name}</span>}
+                </div>
+                {r.task.plant ? (
+                  <Link
+                    href={`/dashboard/plantas/${encodeURIComponent(r.task.plant.psr)}`}
+                    className="mt-1 block truncate font-medium text-text hover:underline"
+                  >
+                    {r.task.titulo || r.task.descPosicionMant || 'Mantención'}
+                  </Link>
+                ) : (
+                  <p className="mt-1 truncate font-medium text-text">
+                    {r.task.titulo || r.task.descPosicionMant || 'Mantención'}
+                  </p>
+                )}
+                <p className="mt-0.5 text-xs text-ds-muted">{fmtHh(r.hhPlanned)} HH</p>
+                <div className="mt-2.5 flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 border-ok/40 text-ok hover:bg-ok-dim"
+                    onClick={() => setConfirm({ row: r, action: 'DONE' })}
+                  >
+                    <CheckCircle2 className="size-4" /> Completar
+                  </Button>
+                  <Button size="sm" variant="outline" className="flex-1" onClick={() => setConfirm({ row: r, action: 'SKIPPED' })}>
+                    Omitir
+                  </Button>
+                </div>
               </div>
-              <p className="line-clamp-2 font-medium text-text">{item.planTask.description}</p>
-              <p className="inline-flex items-center gap-1 truncate text-ds-muted group-hover:text-ds-accent">
-                <Factory className="h-3 w-3" aria-hidden />
-                {item.planTask.plant.name}
-              </p>
-            </Link>
-          ))
-        )}
-      </div>
-    </article>
-  );
-}
+            ))}
+          </section>
+        ))
+      )}
 
-function DaySkeletons() {
-  return (
-    <section className="grid gap-3 lg:grid-cols-2 xl:grid-cols-7">
-      {Array.from({ length: 7 }).map((_, i) => (
-        <Skeleton key={i} className="h-64 rounded-lg" />
-      ))}
-    </section>
-  );
-}
-
-function ErrorBox({ onRetry }: { onRetry: () => void }) {
-  return (
-    <div className="flex flex-col items-start gap-2 rounded-md border border-danger/30 bg-danger-dim p-4 text-sm text-danger">
-      <p className="font-medium">Error cargando la semana.</p>
-      <Button size="sm" variant="outline" onClick={onRetry}>
-        Reintentar
-      </Button>
+      <Dialog open={confirm !== null} onOpenChange={(o) => !o && setConfirm(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {confirm?.action === 'DONE' ? '¿Marcar como completada?' : '¿Omitir esta mantención?'}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-ds-muted">
+            {confirm?.action === 'DONE'
+              ? 'Se registrará como ejecutada hoy.'
+              : 'Quedará marcada como omitida para ese período.'}
+          </p>
+          <DialogFooter className="mt-2 gap-2">
+            <Button variant="outline" onClick={() => setConfirm(null)}>
+              Cancelar
+            </Button>
+            <Button
+              disabled={mutate.isPending}
+              onClick={() => confirm && mutate.mutate({ id: confirm.row.id, status: confirm.action })}
+            >
+              {mutate.isPending ? 'Procesando…' : confirm?.action === 'DONE' ? 'Completar' : 'Omitir'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

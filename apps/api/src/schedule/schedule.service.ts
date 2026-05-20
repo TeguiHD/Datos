@@ -23,6 +23,8 @@ import type {
 
 const TASK_SELECT = {
   id: true,
+  titulo: true,
+  tipo: true,
   descPosicionMant: true,
   denomObjetoTecnico: true,
   ubicacionTecnica: true,
@@ -235,7 +237,7 @@ export class ScheduleService {
 
   async kpis() {
     const activeTaskWhere = { deletedAt: null } satisfies Prisma.MaintenanceTaskWhereInput;
-    const [taskCount, plantCount, abcSplit, freqSplit, pendingCount, overdueCount, doneCount, skippedCount, discCount, plants] =
+    const [taskCount, plantCount, abcSplit, tipoSplit, freqSplit, pendingCount, overdueCount, doneCount, skippedCount, discCount, plants] =
       await this.prisma.$transaction([
         this.prisma.maintenanceTask.count({ where: activeTaskWhere }),
         this.prisma.plant.count({ where: { deletedAt: null, maintenanceTasks: { some: activeTaskWhere } } }),
@@ -244,6 +246,12 @@ export class ScheduleService {
           where: activeTaskWhere,
           _count: { _all: true },
           orderBy: { indicadorAbc: 'asc' },
+        }),
+        this.prisma.maintenanceTask.groupBy({
+          by: ['tipo'],
+          where: activeTaskWhere,
+          _count: { _all: true },
+          orderBy: { tipo: 'asc' },
         }),
         this.prisma.maintenanceTask.groupBy({
           by: ['frecuenciaCodigo'],
@@ -272,6 +280,7 @@ export class ScheduleService {
       taskCount,
       plantCount,
       abcSplit,
+      tipoSplit,
       freqSplit,
       pendingCount,
       overdueCount,

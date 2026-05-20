@@ -352,14 +352,22 @@ function ProximasList({
   onChanged: () => void;
 }) {
   const [confirm, setConfirm] = useState<{ exec: ExecutionRow; action: 'DONE' | 'SKIPPED' } | null>(null);
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
 
   const mutate = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: 'DONE' | 'SKIPPED' }) =>
-      api(`/api/schedule/executions/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+    mutationFn: async ({ id, status }: { id: string; status: 'DONE' | 'SKIPPED' }) => {
+      await api(`/api/schedule/executions/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+      if (status === 'DONE' && evidenceFile) {
+        const fd = new FormData();
+        fd.append('file', evidenceFile);
+        await api(`/api/tasks/ejecuciones/${id}/evidencias`, { method: 'POST', body: fd });
+      }
+    },
     onSuccess: (_d, v) => {
-      toast(v.status === 'DONE' ? 'Mantención marcada como completada' : 'Mantención omitida');
+      toast(v.status === 'DONE' ? 'Mantención completada' : 'Mantención omitida');
       onChanged();
       setConfirm(null);
+      setEvidenceFile(null);
     },
     onError: () => toast('No se pudo guardar el cambio', 'error'),
   });
@@ -422,9 +430,25 @@ function ProximasList({
         }
         confirmLabel={confirm?.action === 'DONE' ? 'Completar' : 'Omitir'}
         pending={mutate.isPending}
-        onCancel={() => setConfirm(null)}
+        onCancel={() => {
+          setConfirm(null);
+          setEvidenceFile(null);
+        }}
         onConfirm={() => confirm && mutate.mutate({ id: confirm.exec.id, status: confirm.action })}
-      />
+      >
+        {confirm?.action === 'DONE' && (
+          <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-[var(--color-border)] px-3 py-2 text-xs text-ds-muted hover:bg-[var(--color-surface-2)]">
+            <Paperclip className="size-3.5" aria-hidden />
+            {evidenceFile ? evidenceFile.name : 'Adjuntar evidencia (opcional)'}
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              className="hidden"
+              onChange={(e) => setEvidenceFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+        )}
+      </ConfirmDialog>
     </>
   );
 }
@@ -735,6 +759,7 @@ function ConfirmDialog({
   pending,
   onCancel,
   onConfirm,
+  children,
 }: {
   open: boolean;
   title: string;
@@ -744,6 +769,7 @@ function ConfirmDialog({
   pending?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
+  children?: React.ReactNode;
 }) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
@@ -752,6 +778,7 @@ function ConfirmDialog({
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         <p className="text-sm text-ds-muted">{detail}</p>
+        {children}
         <DialogFooter className="mt-2 gap-2">
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancelar

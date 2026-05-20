@@ -193,7 +193,7 @@ export async function parseExcelBuffer(buffer: Buffer): Promise<{ tasks: ParsedT
   const monthCols = deriveMonthColumns(headerRow);
 
   const tasks: ParsedTask[] = [];
-  const lastRow = ws.actualRowCount;
+  const lastRow = ws.rowCount;
   if (lastRow > MAX_ROWS) {
     throw new Error(`Excel has too many rows (${lastRow})`);
   }
@@ -242,7 +242,9 @@ function parseEsscSurWorksheet(ws: ExcelJS.Worksheet): { tasks: ParsedTask[] } {
   const headerRow = ws.getRow(ESSC_HEADER_ROW);
   const monthCols = deriveMonthColumns(headerRow, ESSC_MONTHLY_START_COL);
   const tasks: ParsedTask[] = [];
-  const lastRow = ws.actualRowCount;
+  // rowCount incluye la última fila con datos; actualRowCount puede quedar corto
+  // si hay filas dispersas y deja mantenciones fuera del import.
+  const lastRow = ws.rowCount;
   if (lastRow > MAX_ROWS) {
     throw new Error(`Excel has too many rows (${lastRow})`);
   }
