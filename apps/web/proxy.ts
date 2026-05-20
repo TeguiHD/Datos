@@ -37,7 +37,7 @@ export function proxy(req: NextRequest) {
     `media-src 'self' data: blob:`,
     `font-src 'self' data:`,
     `style-src 'self' 'unsafe-inline'`,
-    `script-src 'self' 'nonce-${nonce}' 'unsafe-inline' https://static.cloudflareinsights.com${isDev ? " 'unsafe-eval'" : ''}`,
+    `script-src 'self' 'nonce-${nonce}' https://static.cloudflareinsights.com${isDev ? " 'unsafe-eval'" : ''}`,
     `connect-src ${connectSrc}`,
     `object-src 'none'`,
     `upgrade-insecure-requests`,
@@ -45,6 +45,10 @@ export function proxy(req: NextRequest) {
 
   const reqHeaders = new Headers(req.headers);
   reqHeaders.set('x-nonce', nonce);
+  // Next.js lee el nonce desde el header Content-Security-Policy del request
+  // y lo aplica a todos sus <script> inline/chunk. Sin esto, sus scripts
+  // quedan sin nonce y el navegador los bloquea.
+  reqHeaders.set('Content-Security-Policy', csp);
 
   const res = NextResponse.next({ request: { headers: reqHeaders } });
   res.headers.set('Content-Security-Policy', csp);
