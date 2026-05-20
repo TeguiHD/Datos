@@ -3,21 +3,21 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { CalendarClock, Factory, ListTodo, Menu, Sun } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import { MoreSheet } from './MoreSheet';
+import { BOTTOM_NAV } from './nav-config';
 
-const TABS = [
-  { href: '/dashboard/hoy', label: 'Hoy', icon: Sun },
-  { href: '/dashboard/semana', label: 'Semana', icon: CalendarClock },
-  { href: '/dashboard/tareas', label: 'Tareas', icon: ListTodo },
-  { href: '/dashboard/plantas', label: 'Plantas', icon: Factory },
-];
+const TABS = BOTTOM_NAV;
+
+function isActive(pathname: string, href: string, exact?: boolean): boolean {
+  return exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
+}
 
 export function BottomNav() {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
 
-  const onMainTab = TABS.some((t) => pathname === t.href || pathname.startsWith(`${t.href}/`));
+  const onMainTab = TABS.some((t) => isActive(pathname, t.href, t.exactMatch));
 
   return (
     <>
@@ -27,7 +27,7 @@ export function BottomNav() {
       >
         <ul className="grid grid-cols-5">
           {TABS.map((tab) => {
-            const active = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
+            const active = isActive(pathname, tab.href, tab.exactMatch);
             const Icon = tab.icon;
             return (
               <li key={tab.href}>

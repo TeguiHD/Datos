@@ -10,6 +10,7 @@ import {
   CalendarClock,
   CheckCircle2,
   ClipboardList,
+  Download,
   Plus,
   Search,
   Settings2,
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/lib/toast';
+import { downloadFile } from '@/lib/download';
 import { hh as fmtHh, int, dateFormat } from '@/lib/i18n/formatters';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -180,9 +182,25 @@ export default function PlantDetailPage() {
             <h1 className="text-2xl font-semibold text-text">{row.name}</h1>
             <PlantStatusChip status={row.status} />
           </div>
-          <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
-            <Settings2 className="size-4" /> Ajustes
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                try {
+                  await downloadFile(`/api/export/mantenciones?plantId=${row.id}`);
+                  toast('Excel exportado');
+                } catch {
+                  toast('No se pudo exportar', 'error');
+                }
+              }}
+            >
+              <Download className="size-4" /> Exportar
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
+              <Settings2 className="size-4" /> Ajustes
+            </Button>
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
           <Kpi label="Mantenciones" value={int(row.kpis.maintenanceTaskCount)} icon={<ClipboardList className="size-4" />} />

@@ -3,10 +3,12 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, CalendarClock, ClipboardList, Factory, Pencil, Search } from 'lucide-react';
+import { Activity, CalendarClock, ClipboardList, Download, Factory, Pencil, Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { downloadFile } from '@/lib/download';
+import { toast } from '@/lib/toast';
 
 type PlantStatus = 'ACTIVE' | 'STANDBY' | 'INACTIVE';
 
@@ -90,9 +92,21 @@ export default function PlantasPage() {
           <option value="STANDBY">Standby</option>
           <option value="INACTIVE">Inactivas</option>
         </select>
-        <a href="/dashboard/tareas" className="inline-flex h-9 items-center justify-center rounded-md border border-[var(--color-border)] px-3 text-sm font-medium text-text hover:bg-[var(--color-surface-2)]">
-          Ver tareas
-        </a>
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              await downloadFile('/api/export/mantenciones');
+              toast('Excel exportado');
+            } catch {
+              toast('No se pudo exportar', 'error');
+            }
+          }}
+          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 text-sm font-medium text-text hover:bg-[var(--color-surface-2)]"
+        >
+          <Download className="size-4" />
+          Exportar Excel
+        </button>
       </section>
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">

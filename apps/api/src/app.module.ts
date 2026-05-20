@@ -15,6 +15,7 @@ import { AiModule } from './ai/ai.module';
 import { OperationsModule } from './operations/operations.module';
 import { ReportsModule } from './reports/reports.module';
 import { HhDefaultsModule } from './hh-defaults/hh-defaults.module';
+import { ExportModule } from './export/export.module';
 import { HealthController } from './health.controller';
 import { IdempotencyMiddleware } from './common/idempotency.middleware';
 import { RequestIdMiddleware } from './common/request-id.middleware';
@@ -59,6 +60,7 @@ import { RequestIdMiddleware } from './common/request-id.middleware';
     OperationsModule,
     ReportsModule,
     HhDefaultsModule,
+    ExportModule,
   ],
   controllers: [HealthController],
   providers: [
