@@ -5,6 +5,7 @@ import { BarChart3, CheckCircle2, Clock, Factory, SkipForward } from 'lucide-rea
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
+import { AnalysisTabs } from '../_components/AnalysisTabs';
 
 interface Kpis {
   taskCount: number;
@@ -36,6 +37,8 @@ export default function EstadisticasPage() {
           Mediciones simples para entender carga, avance y plantas con mayor volumen de tareas.
         </p>
       </header>
+
+      <AnalysisTabs />
 
       <section className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-3 xl:grid-cols-5">
         <Metric title="Plantas" value={NUMBER.format(data?.plantCount ?? 0)} icon={<Factory className="size-4" />} />

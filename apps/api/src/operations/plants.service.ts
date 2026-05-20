@@ -150,7 +150,17 @@ export class PlantsService {
           where: { deletedAt: null },
           include: {
             schedule: { orderBy: [{ year: 'asc' }, { month: 'asc' }] },
-            executions: { orderBy: { dueDate: 'asc' }, take: 24 },
+            executions: {
+              orderBy: { dueDate: 'asc' },
+              take: 24,
+              include: {
+                evidence: {
+                  where: { deletedAt: null },
+                  select: { id: true, originalName: true, mime: true, sizeBytes: true, uploadedAt: true },
+                  orderBy: { uploadedAt: 'desc' },
+                },
+              },
+            },
           },
           orderBy: [{ frecuenciaCodigo: 'asc' }, { descPosicionMant: 'asc' }],
         },

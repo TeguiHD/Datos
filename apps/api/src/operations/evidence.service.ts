@@ -100,6 +100,52 @@ export class EvidenceService {
     return { ok: true };
   }
 
+  /** Adjunta evidencia a una ejecución de mantención (TaskExecution). */
+  async uploadToTaskExecution(
+    userId: string,
+    taskExecutionId: string,
+    file: Express.Multer.File,
+    dto: EvidenceDescriptionDto,
+    ctx: RequestContext,
+  ) {
+    if (!file) throw new NotFoundException('Archivo no recibido');
+    const exec = await this.prisma.taskExecution.findUnique({
+      where: { id: taskExecutionId },
+      include: { task: { include: { plant: true } } },
+    });
+    if (!exec || exec.task.deletedAt) throw new NotFoundException('Ejecución no encontrada');
+
+    const stored = await this.storage.store({
+      plantId: exec.task.plantId ?? 'sin-planta',
+      executionId: taskExecutionId,
+      file,
+    });
+    const clean = sanitizeObject(dto);
+    const evidence = await this.prisma.evidence.create({
+      data: {
+        taskExecutionId,
+        filename: stored.filename,
+        originalName: stored.originalName,
+        mime: stored.mime,
+        sizeBytes: stored.sizeBytes,
+        sha256: stored.sha256,
+        path: stored.path,
+        description: clean.description,
+        uploadedById: userId,
+      },
+    });
+    await this.audit.record({
+      userId,
+      action: 'EVIDENCE_UPLOAD',
+      entity: 'Evidence',
+      entityId: evidence.id,
+      after: { ...evidence, path: '[redacted]' },
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+    });
+    return this.toEvidenceDto(evidence);
+  }
+
   private toEvidenceDto(evidence: {
     id: string;
     filename: string;

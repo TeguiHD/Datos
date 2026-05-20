@@ -24,6 +24,7 @@ import type { ExecutionAnalyticsList, ExecutionRow, PipelineMonthPoint, Pipeline
 import { ChartPanel } from '../_components/ChartPanel';
 import { KpiCard } from '../_components/KpiCard';
 import { StatusBadge } from '../_components/StatusBadge';
+import { AnalysisTabs } from '../_components/AnalysisTabs';
 
 const HH_FORMAT = new Intl.NumberFormat('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const NUMBER_FORMAT = new Intl.NumberFormat('es-CL');
@@ -92,6 +93,7 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-5 fade-up">
+      <AnalysisTabs />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-[11px] uppercase tracking-[0.18em] text-ds-muted">Analytics operacional</p>

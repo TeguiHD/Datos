@@ -10,7 +10,8 @@ import {
   CalendarClock,
   CheckCircle2,
   ClipboardList,
-  Download,
+  FileText,
+  Paperclip,
   Plus,
   Search,
   Settings2,
@@ -29,10 +30,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { ExportMenu } from '../../_components/ExportMenu';
 
 type PlantStatus = 'ACTIVE' | 'STANDBY' | 'INACTIVE';
 type ExecStatus = 'PENDING' | 'OVERDUE' | 'DONE' | 'SKIPPED';
 type MaintType = 'PREVENTIVA' | 'CORRECTIVA' | 'PREDICTIVA';
+
+interface EvidenceRow {
+  id: string;
+  originalName: string | null;
+  mime: string;
+  sizeBytes: number;
+  uploadedAt: string;
+}
 
 interface ExecutionRow {
   id: string;
@@ -40,6 +50,7 @@ interface ExecutionRow {
   status: ExecStatus;
   hhPlanned: string | number;
   hhActual: string | number | null;
+  evidence?: EvidenceRow[];
 }
 
 interface TaskRow {
@@ -183,20 +194,7 @@ export default function PlantDetailPage() {
             <PlantStatusChip status={row.status} />
           </div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                try {
-                  await downloadFile(`/api/export/mantenciones?plantId=${row.id}`);
-                  toast('Excel exportado');
-                } catch {
-                  toast('No se pudo exportar', 'error');
-                }
-              }}
-            >
-              <Download className="size-4" /> Exportar
-            </Button>
+            <ExportMenu plantId={row.id} />
             <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
               <Settings2 className="size-4" /> Ajustes
             </Button>
@@ -559,6 +557,8 @@ function MaintenanceDialog({
             <Input value={responsable} onChange={(e) => setResponsable(e.target.value)} placeholder="Nombre del responsable" />
           </Labeled>
 
+          {!isNew && <EvidenceSection task={task} />}
+
           <DialogFooter className="mt-1 gap-2">
             {!isNew && (
               <Button
@@ -593,6 +593,74 @@ function MaintenanceDialog({
         />
       )}
     </Dialog>
+  );
+}
+
+/* ---------- Evidencias ---------- */
+
+function EvidenceSection({ task }: { task: TaskRow }) {
+  const [list, setList] = useState<EvidenceRow[]>(() =>
+    task.executions.flatMap((e) => e.evidence ?? []),
+  );
+  const [busy, setBusy] = useState(false);
+  const latestExec = useMemo(
+    () => [...task.executions].sort((a, b) => +new Date(b.dueDate) - +new Date(a.dueDate))[0],
+    [task],
+  );
+
+  async function onFile(ev: React.ChangeEvent<HTMLInputElement>) {
+    const file = ev.target.files?.[0];
+    ev.target.value = '';
+    if (!file) return;
+    if (!latestExec) {
+      toast('La mantención aún no tiene ejecuciones', 'error');
+      return;
+    }
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const created = await api<EvidenceRow>(`/api/tasks/ejecuciones/${latestExec.id}/evidencias`, {
+        method: 'POST',
+        body: fd,
+      });
+      setList((l) => [created, ...l]);
+      toast('Evidencia adjuntada');
+    } catch {
+      toast('No se pudo adjuntar el archivo', 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-medium text-ds-muted">Evidencias ({list.length})</p>
+        <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-xs font-medium text-text hover:bg-[var(--color-surface-2)]">
+          <Paperclip className="size-3.5" aria-hidden />
+          {busy ? 'Subiendo…' : 'Adjuntar'}
+          <input type="file" className="hidden" onChange={onFile} disabled={busy} accept="image/*,application/pdf" />
+        </label>
+      </div>
+      {list.length > 0 && (
+        <ul className="mt-2 grid gap-1">
+          {list.map((ev) => (
+            <li key={ev.id}>
+              <button
+                type="button"
+                onClick={() => downloadFile(`/api/evidencias/${ev.id}`).catch(() => toast('No se pudo descargar', 'error'))}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--color-surface)]"
+              >
+                <FileText className="size-3.5 shrink-0 text-ds-muted" aria-hidden />
+                <span className="min-w-0 flex-1 truncate text-text">{ev.originalName ?? 'archivo'}</span>
+                <span className="shrink-0 text-ds-muted">{(ev.sizeBytes / 1024).toFixed(0)} KB</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

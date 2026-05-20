@@ -45,6 +45,19 @@ export class EvidenceController {
     return this.evidence.upload(user.id, executionId, file, body, requestContext(req));
   }
 
+  @Post('tareas/ejecuciones/:id/evidencias')
+  @Roles(Role.SUPERADMIN, Role.ADMIN, Role.EDITOR)
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES } }))
+  uploadToTask(
+    @CurrentUser() user: { id: string },
+    @Param('id') taskExecutionId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: EvidenceDescriptionDto,
+    @Req() req: Request,
+  ) {
+    return this.evidence.uploadToTaskExecution(user.id, taskExecutionId, file, body, requestContext(req));
+  }
+
   @Get('evidencias/:id')
   @Header('Cache-Control', 'private, no-store')
   async download(@CurrentUser() user: { role: Role }, @Param('id') id: string, @Res({ passthrough: true }) res: Response) {

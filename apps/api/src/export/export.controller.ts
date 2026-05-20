@@ -22,12 +22,17 @@ export class ExportController {
     @Req() req: AuthRequest,
     @Res({ passthrough: true }) res: Response,
     @Query('plantId') plantId?: string,
+    @Query('format') format?: string,
   ) {
-    const out = await this.exportService.maintenancesXlsx(req.user, plantId || undefined);
-    res.setHeader(
-      'Content-Type',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    );
+    const plant = plantId || undefined;
+    if (format === 'pdf') {
+      const out = await this.exportService.maintenancesPdf(req.user, plant);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+      return out.buffer;
+    }
+    const out = await this.exportService.maintenancesXlsx(req.user, plant);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
     return out.buffer;
   }
