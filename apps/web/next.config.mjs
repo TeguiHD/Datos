@@ -4,6 +4,7 @@ const nextConfig = {
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
   output: 'standalone',
+  transpilePackages: ['@datos/shared-types'],
   experimental: {
     serverActions: { bodySizeLimit: '11mb' },
   },

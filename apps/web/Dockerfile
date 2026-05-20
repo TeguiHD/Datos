@@ -6,11 +6,13 @@ FROM base AS deps
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
 COPY apps/web/package.json apps/web/
 COPY apps/api/package.json apps/api/
+COPY packages/shared-types/package.json packages/shared-types/
 RUN pnpm install --frozen-lockfile=false --filter @datos/web...
 
 FROM base AS build
 COPY --from=deps /app /app
 COPY apps/web apps/web
+COPY packages packages
 COPY tsconfig.base.json .
 WORKDIR /app/apps/web
 ARG NEXT_PUBLIC_API_URL

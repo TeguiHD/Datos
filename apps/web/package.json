@@ -16,6 +16,7 @@
     "e2e:headed": "playwright test --headed"
   },
   "dependencies": {
+    "@datos/shared-types": "workspace:*",
     "@base-ui/react": "^1.4.1",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.15",
