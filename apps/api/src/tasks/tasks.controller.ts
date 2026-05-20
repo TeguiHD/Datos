@@ -17,7 +17,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles, RolesGuard } from '../auth/guards/roles.guard';
 import { CurrentUser } from '../auth/decorators';
 import { TasksService } from './tasks.service';
-import { ListTasksDto, UpsertScheduleDto, UpsertTaskDto } from './tasks.dto';
+import { DeleteTaskDto, ListTasksDto, UpsertScheduleDto, UpsertTaskDto } from './tasks.dto';
 import { requestContext } from '../common/request-context';
 
 @Controller('tasks')
@@ -29,6 +29,16 @@ export class TasksController {
   @Get()
   list(@Query() query: ListTasksDto) {
     return this.tasks.list(query);
+  }
+
+  @Get('plants')
+  plants(@Query() query: ListTasksDto) {
+    return this.tasks.plants(query);
+  }
+
+  @Get('facets')
+  facets() {
+    return this.tasks.facets();
   }
 
   @Get(':id')
@@ -55,8 +65,8 @@ export class TasksController {
 
   @Delete(':id')
   @Roles(Role.SUPERADMIN, Role.ADMIN)
-  remove(@CurrentUser() user: { id: string }, @Param('id') id: string, @Req() req: Request) {
-    return this.tasks.remove(user.id, id, requestContext(req));
+  remove(@CurrentUser() user: { id: string }, @Param('id') id: string, @Body() body: DeleteTaskDto, @Req() req: Request) {
+    return this.tasks.remove(user.id, id, body, requestContext(req));
   }
 
   @Put(':id/schedule')

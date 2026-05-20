@@ -13,13 +13,13 @@ export class AuditController {
   @Get()
   list(
     @Query('take') take?: string,
-    @Query('skip') skip?: string,
+    @Query('cursor') cursor?: string,
     @Query('userId') userId?: string,
     @Query('action') action?: string,
   ) {
     return this.audit.list({
       take: take ? Number(take) : undefined,
-      skip: skip ? Number(skip) : undefined,
+      cursor: cursor || undefined,
       userId,
       action,
     });

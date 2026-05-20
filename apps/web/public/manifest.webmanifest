@@ -1,0 +1,28 @@
+{
+  "name": "datos.nicoholas.dev",
+  "short_name": "Datos PM",
+  "description": "Planificación de mantenimiento preventivo SAP-PM",
+  "lang": "es-CL",
+  "dir": "ltr",
+  "start_url": "/dashboard/hoy",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "categories": ["productivity", "business", "utilities"],
+  "id": "/?source=pwa",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Hoy", "short_name": "Hoy", "url": "/dashboard/hoy", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Semana", "short_name": "Semana", "url": "/dashboard/semana", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Vencidas", "short_name": "Vencidas", "url": "/dashboard/tareas?estado=OVERDUE", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
+  ],
+  "prefer_related_applications": false
+}

@@ -10,7 +10,11 @@
     "outDir": "./dist",
     "baseUrl": "./",
     "incremental": true,
-    "strictNullChecks": true
+    "strictNullChecks": true,
+    "paths": {
+      "@datos/shared-types": ["../../packages/shared-types/src/index.ts"],
+      "@datos/shared-types/*": ["../../packages/shared-types/src/*"]
+    }
   },
   "include": ["src/**/*", "scripts/**/*", "prisma/**/*"],
   "exclude": ["node_modules", "dist"]

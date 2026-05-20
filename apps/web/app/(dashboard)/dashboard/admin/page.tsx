@@ -23,6 +23,11 @@ interface AuditRow {
   createdAt: string;
 }
 
+interface AuditPage {
+  items: AuditRow[];
+  nextCursor: string | null;
+}
+
 export default function AdminPage() {
   const { data, refetch, isLoading, isError, error } = useQuery({
     queryKey: ['imports'],
@@ -30,12 +35,14 @@ export default function AdminPage() {
   });
   const totpFailQuery = useQuery({
     queryKey: ['audit-2fa-fail'],
-    queryFn: () => api<AuditRow[]>('/api/audit?action=TOTP_VERIFY_FAIL&take=20'),
+    queryFn: () => api<AuditPage>('/api/audit?action=TOTP_VERIFY_FAIL&take=20'),
   });
   const totpOkQuery = useQuery({
     queryKey: ['audit-2fa-ok'],
-    queryFn: () => api<AuditRow[]>('/api/audit?action=TOTP_VERIFY_OK&take=20'),
+    queryFn: () => api<AuditPage>('/api/audit?action=TOTP_VERIFY_OK&take=20'),
   });
+  const failItems = totpFailQuery.data?.items ?? [];
+  const okItems = totpOkQuery.data?.items ?? [];
   const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -44,11 +51,11 @@ export default function AdminPage() {
     error.status === 403 &&
     (error.body as { message?: string })?.message === '2FA required';
 
-  const auditEvents = [...(totpFailQuery.data ?? []), ...(totpOkQuery.data ?? [])]
+  const auditEvents = [...failItems, ...okItems]
     .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
     .slice(0, 20);
-  const failCount = totpFailQuery.data?.length ?? 0;
-  const okCount = totpOkQuery.data?.length ?? 0;
+  const failCount = failItems.length;
+  const okCount = okItems.length;
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];

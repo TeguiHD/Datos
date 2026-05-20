@@ -4,6 +4,7 @@ import { AdminController } from './admin.controller';
 import { ImportService } from './import.service';
 import { AuditModule } from '../audit/audit.module';
 import { ScheduleModule } from '../schedule/schedule.module';
+import { PlantCatalogService } from '../operations/plant-catalog.service';
 
 @Module({
   imports: [
@@ -12,6 +13,6 @@ import { ScheduleModule } from '../schedule/schedule.module';
     ScheduleModule,
   ],
   controllers: [AdminController],
-  providers: [ImportService],
+  providers: [ImportService, PlantCatalogService],
 })
 export class AdminModule {}

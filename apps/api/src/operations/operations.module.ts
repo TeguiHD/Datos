@@ -14,6 +14,7 @@ import { PlanController } from './plan.controller';
 import { PlanService } from './plan.service';
 import { PlantsController } from './plants.controller';
 import { PlantsService } from './plants.service';
+import { PlantCatalogService } from './plant-catalog.service';
 
 @Module({
   imports: [PrismaModule, AuditModule],
@@ -33,6 +34,7 @@ import { PlantsService } from './plants.service';
     EvidenceService,
     EvidenceStorage,
     DashboardService,
+    PlantCatalogService,
   ],
 })
 export class OperationsModule {}

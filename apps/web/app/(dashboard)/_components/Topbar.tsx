@@ -16,6 +16,7 @@ const BREADCRUMB_MAP: Record<string, string> = {
   '/dashboard/semana': 'Semana',
   '/dashboard/tareas': 'Tareas',
   '/dashboard/cronograma': 'Cronograma',
+  '/dashboard/estadisticas': 'Estadísticas',
   '/dashboard/revisiones': 'Revisiones',
   '/dashboard/plantas': 'Plantas',
   '/dashboard/analytics': 'Analytics',

@@ -67,13 +67,20 @@ export class AuditService {
     return { ok: true, count: logs.length };
   }
 
-  list(params: { take?: number; skip?: number; userId?: string; action?: string }) {
-    const { take = 100, skip = 0, userId, action } = params;
-    return this.prisma.auditLog.findMany({
-      take: Math.min(take, 500),
-      skip,
-      where: { userId, action },
-      orderBy: { createdAt: 'desc' },
+  async list(params: { take?: number; cursor?: string; userId?: string; action?: string }) {
+    const take = Math.min(params.take ?? 100, 500);
+    const rows = await this.prisma.auditLog.findMany({
+      take: take + 1,
+      where: { userId: params.userId, action: params.action },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      ...(params.cursor ? { cursor: { id: params.cursor }, skip: 1 } : {}),
     });
+    const hasMore = rows.length > take;
+    const items = hasMore ? rows.slice(0, take) : rows;
+    const last = items[items.length - 1];
+    return {
+      items,
+      nextCursor: hasMore && last ? last.id : null,
+    };
   }
 }

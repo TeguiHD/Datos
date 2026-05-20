@@ -4,6 +4,7 @@ import { ExecStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { MaterializeService } from './materialize.service';
+import { normalizePlantAlias } from '../operations/plant-catalog.service';
 import type {
   CreateSavedViewDto,
   ExecutionExportFormat,
@@ -11,7 +12,9 @@ import type {
   ExecutionSortField,
   ExportExecutionsDto,
   GroupExecutionsDto,
+  HeatmapDto,
   ListExecutionsDto,
+  MatrixDto,
   PlantListDto,
   PlantSortField,
   PipelineDto,
@@ -32,6 +35,7 @@ const TASK_SELECT = {
   centroPlanificacion: true,
   ptoTbjoResponsable: true,
   comentarios: true,
+  plant: { select: { id: true, psr: true, name: true, status: true } },
 } as const;
 
 const EXECUTION_STATUSES: ExecStatus[] = [
@@ -43,6 +47,8 @@ const EXECUTION_STATUSES: ExecStatus[] = [
 
 const SAVED_VIEW_FILTER_KEYS = [
   'q',
+  'plantId',
+  'planta',
   'status',
   'abc',
   'frecuencia',
@@ -66,6 +72,8 @@ type ExecutionFilterQuery = {
   abc?: string;
   frecuencia?: string;
   psr?: string;
+  plantId?: string;
+  planta?: string;
   centroPlanificacion?: string;
   equipo?: string;
   ubicacionTecnica?: string;
@@ -97,10 +105,18 @@ type PlantTaskRef = {
   centroPlanificacion: string | null;
   ptoTbjoResponsable: string | null;
   comentarios: string | null;
+  plant: {
+    id: string;
+    psr: string;
+    name: string;
+    status: string;
+  } | null;
 };
 
 type PlantAccumulator = {
   key: string;
+  id: string | null;
+  statusLabel: string | null;
   name: string;
   locationCode: string | null;
   centroPlanificacion: string | null;
@@ -128,7 +144,7 @@ export class ScheduleService {
 
   async monthly(year: number, month: number) {
     const rows = await this.prisma.monthlySchedule.findMany({
-      where: { year, month, hh: { gt: 0 } },
+      where: { year, month, task: { deletedAt: null } },
       include: { task: { select: TASK_SELECT } },
       orderBy: [{ task: { indicadorAbc: 'asc' } }, { hh: 'desc' }],
     });
@@ -136,10 +152,79 @@ export class ScheduleService {
     return { year, month, totalHh, count: rows.length, rows };
   }
 
+  /**
+   * Matriz cronograma estilo SAP-PM: una fila por tarea, columnas por mes,
+   * celda marcada con el estado de la ejecución en ese mes.
+   * Replica el artefacto central del Excel pero con estado operativo.
+   */
+  async matrix(query: MatrixDto) {
+    await this.materialize.markOverdue();
+    const yearFrom = Math.min(query.yearFrom, query.yearTo);
+    const yearTo = Math.max(query.yearFrom, query.yearTo);
+    const from = new Date(Date.UTC(yearFrom, 0, 1));
+    const to = new Date(Date.UTC(yearTo + 1, 0, 1));
+
+    const q = query.q?.trim();
+    const taskWhere: Prisma.MaintenanceTaskWhereInput = {
+      deletedAt: null,
+      ...(query.plantId ? { plantId: query.plantId } : {}),
+      ...(q
+        ? {
+            OR: [
+              { descPosicionMant: { contains: q, mode: 'insensitive' } },
+              { denomObjetoTecnico: { contains: q, mode: 'insensitive' } },
+              { ubicacionTecnica: { contains: q, mode: 'insensitive' } },
+              { equipo: { contains: q, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const tasks = await this.prisma.maintenanceTask.findMany({
+      where: taskWhere,
+      select: {
+        id: true,
+        descPosicionMant: true,
+        denomObjetoTecnico: true,
+        ubicacionTecnica: true,
+        equipo: true,
+        indicadorAbc: true,
+        frecuenciaCodigo: true,
+        plant: { select: { id: true, name: true } },
+        executions: {
+          where: { dueDate: { gte: from, lt: to } },
+          select: { dueDate: true, status: true, hhPlanned: true },
+        },
+      },
+      orderBy: [{ plant: { name: 'asc' } }, { indicadorAbc: 'asc' }, { descPosicionMant: 'asc' }],
+      take: 2000,
+    });
+
+    const rows = tasks.map((t) => {
+      const cells = t.executions.map((e) => ({
+        year: e.dueDate.getUTCFullYear(),
+        month: e.dueDate.getUTCMonth() + 1,
+        status: e.status,
+        hhPlanned: Number(e.hhPlanned),
+      }));
+      return {
+        id: t.id,
+        label: t.descPosicionMant ?? t.denomObjetoTecnico ?? 'Sin descripción',
+        location: t.ubicacionTecnica ?? t.equipo ?? null,
+        abc: t.indicadorAbc,
+        frecuencia: t.frecuenciaCodigo,
+        plant: t.plant ? { id: t.plant.id, name: t.plant.name } : null,
+        cells,
+      };
+    });
+
+    return { yearFrom, yearTo, taskCount: rows.length, rows };
+  }
+
   async yearSummary(year: number) {
     const rows = await this.prisma.monthlySchedule.groupBy({
       by: ['month'],
-      where: { year },
+      where: { year, task: { deletedAt: null } },
       _sum: { hh: true },
       _count: { taskId: true },
     });
@@ -149,34 +234,73 @@ export class ScheduleService {
   }
 
   async kpis() {
-    const [taskCount, abcSplit, freqSplit, pendingCount, overdueCount, discCount] =
+    const activeTaskWhere = { deletedAt: null } satisfies Prisma.MaintenanceTaskWhereInput;
+    const [taskCount, plantCount, abcSplit, freqSplit, pendingCount, overdueCount, doneCount, skippedCount, discCount, plants] =
       await this.prisma.$transaction([
-        this.prisma.maintenanceTask.count(),
+        this.prisma.maintenanceTask.count({ where: activeTaskWhere }),
+        this.prisma.plant.count({ where: { deletedAt: null, maintenanceTasks: { some: activeTaskWhere } } }),
         this.prisma.maintenanceTask.groupBy({
           by: ['indicadorAbc'],
+          where: activeTaskWhere,
           _count: { _all: true },
           orderBy: { indicadorAbc: 'asc' },
         }),
         this.prisma.maintenanceTask.groupBy({
           by: ['frecuenciaCodigo'],
+          where: activeTaskWhere,
           _count: { _all: true },
           orderBy: { frecuenciaCodigo: 'asc' },
         }),
-        this.prisma.taskExecution.count({ where: { status: ExecStatus.PENDING } }),
-        this.prisma.taskExecution.count({ where: { status: ExecStatus.OVERDUE } }),
-        this.prisma.maintenanceTask.count({ where: { hasDiscrepancy: true } }),
+        this.prisma.taskExecution.count({ where: { status: ExecStatus.PENDING, task: activeTaskWhere } }),
+        this.prisma.taskExecution.count({ where: { status: ExecStatus.OVERDUE, task: activeTaskWhere } }),
+        this.prisma.taskExecution.count({ where: { status: ExecStatus.DONE, task: activeTaskWhere } }),
+        this.prisma.taskExecution.count({ where: { status: ExecStatus.SKIPPED, task: activeTaskWhere } }),
+        this.prisma.maintenanceTask.count({ where: { ...activeTaskWhere, hasDiscrepancy: true } }),
+        this.prisma.plant.findMany({
+          where: { deletedAt: null, maintenanceTasks: { some: activeTaskWhere } },
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            _count: { select: { maintenanceTasks: { where: activeTaskWhere } } },
+          },
+          orderBy: { name: 'asc' },
+          take: 50,
+        }),
       ]);
-    return { taskCount, abcSplit, freqSplit, pendingCount, overdueCount, discCount };
+    return {
+      taskCount,
+      plantCount,
+      abcSplit,
+      freqSplit,
+      pendingCount,
+      overdueCount,
+      doneCount,
+      skippedCount,
+      discCount,
+      plantsByTasks: plants
+        .map((plant) => ({ id: plant.id, name: plant.name, status: plant.status, taskCount: plant._count.maintenanceTasks }))
+        .sort((a, b) => b.taskCount - a.taskCount || a.name.localeCompare(b.name)),
+    };
   }
 
-  async heatmap(fromYear: number, toYear: number) {
+  async heatmap(query: HeatmapDto) {
+    const taskWhere = this.taskWhereFromQuery(query, false);
     const rows = await this.prisma.monthlySchedule.groupBy({
       by: ['year', 'month'],
-      where: { year: { gte: fromYear, lte: toYear } },
+      where: {
+        year: { gte: query.from, lte: query.to },
+        task: { deletedAt: null },
+        ...(Object.keys(taskWhere).length > 0 && { task: taskWhere }),
+      },
       _sum: { hh: true },
+      _count: { taskId: true },
     });
     return rows
-      .map((r) => ({ year: r.year, month: r.month, totalHh: Number(r._sum.hh ?? 0) }))
+      .map((r) => {
+        const hh = Number(r._sum.hh ?? 0);
+        return { year: r.year, month: r.month, totalHh: hh > 0 ? hh : r._count.taskId, count: r._count.taskId };
+      })
       .sort((a, b) => a.year - b.year || a.month - b.month);
   }
 
@@ -188,6 +312,7 @@ export class ScheduleService {
       where: {
         status: ExecStatus.PENDING,
         dueDate: { gte: startOfMonth(now), lte: horizon },
+        task: { deletedAt: null },
       },
       include: { task: { select: TASK_SELECT } },
       orderBy: [{ dueDate: 'asc' }, { task: { indicadorAbc: 'asc' } }],
@@ -199,7 +324,7 @@ export class ScheduleService {
   async overdue() {
     await this.materialize.markOverdue();
     const rows = await this.prisma.taskExecution.findMany({
-      where: { status: ExecStatus.OVERDUE },
+      where: { status: ExecStatus.OVERDUE, task: { deletedAt: null } },
       include: { task: { select: TASK_SELECT } },
       orderBy: [{ dueDate: 'asc' }, { task: { indicadorAbc: 'asc' } }],
     });
@@ -284,8 +409,9 @@ export class ScheduleService {
         hhActual: true,
         task: {
           select: {
-            id: true,
-            descPosicionMant: true,
+          id: true,
+          plant: { select: { id: true, psr: true, name: true, status: true } },
+          descPosicionMant: true,
             denomObjetoTecnico: true,
             ubicacionTecnica: true,
             denomUbicacionTecnica: true,
@@ -327,7 +453,9 @@ export class ScheduleService {
         const riskScore = plant.status.OVERDUE * 4 + plant.status.PENDING + plant.abcAOverdue * 3 + plant.reviewFlags * 2;
         return {
           key: plant.key,
+          id: plant.id,
           name: plant.name,
+          statusLabel: plant.statusLabel,
           locationCode: plant.locationCode,
           centroPlanificacion: plant.centroPlanificacion,
           psr: plant.psr,
@@ -778,6 +906,8 @@ export class ScheduleService {
   private pickSavedViewFilters(dto: SavedViewFilterMutation): SavedViewFilterMutation {
     const q = dto.q?.trim();
     const abc = dto.abc?.trim();
+    const plantId = dto.plantId?.trim();
+    const planta = dto.planta?.trim();
     const frecuencia = dto.frecuencia?.trim();
     const psr = dto.psr?.trim();
     const centroPlanificacion = dto.centroPlanificacion?.trim();
@@ -787,6 +917,8 @@ export class ScheduleService {
     return {
       ...(q && { q }),
       ...(dto.status && { status: dto.status }),
+      ...(plantId && { plantId }),
+      ...(planta && { planta }),
       ...(abc && { abc }),
       ...(frecuencia && { frecuencia }),
       ...(psr && { psr }),
@@ -887,25 +1019,43 @@ export class ScheduleService {
   }
 
   private taskWhereFromQuery(
-    query: Pick<ExecutionFilterQuery, 'q' | 'abc' | 'frecuencia' | 'psr' | 'centroPlanificacion' | 'equipo' | 'ubicacionTecnica'>,
+    query: Pick<ExecutionFilterQuery, 'q' | 'plantId' | 'planta' | 'abc' | 'frecuencia' | 'psr' | 'centroPlanificacion' | 'equipo' | 'ubicacionTecnica'>,
     includeTextSearch: boolean,
   ): Prisma.MaintenanceTaskWhereInput {
+    const andFilters: Prisma.MaintenanceTaskWhereInput[] = [];
+    if (query.planta) {
+      const normalized = normalizePlantAlias(query.planta);
+      andFilters.push({
+        OR: [
+          { plant: { name: { contains: query.planta, mode: 'insensitive' } } },
+          { plant: { psr: { contains: query.planta, mode: 'insensitive' } } },
+          { plant: { aliases: { some: { normalizedAlias: { contains: normalized } } } } },
+          { denomUbicacionTecnica: { contains: query.planta, mode: 'insensitive' } },
+        ],
+      });
+    }
+    if (includeTextSearch && query.q) {
+      andFilters.push({
+        OR: [
+          { descPosicionMant: { contains: query.q, mode: 'insensitive' } },
+          { denomObjetoTecnico: { contains: query.q, mode: 'insensitive' } },
+          { denomUbicacionTecnica: { contains: query.q, mode: 'insensitive' } },
+          { comentarios: { contains: query.q, mode: 'insensitive' } },
+          { plant: { name: { contains: query.q, mode: 'insensitive' } } },
+        ],
+      });
+    }
+
     return {
+      deletedAt: null,
+      ...(query.plantId && { plantId: query.plantId }),
       ...(query.psr && { psr: query.psr }),
       ...(query.abc && { indicadorAbc: query.abc }),
       ...(query.frecuencia && { frecuenciaCodigo: query.frecuencia }),
       ...(query.centroPlanificacion && { centroPlanificacion: query.centroPlanificacion }),
       ...(query.equipo && { equipo: { contains: query.equipo, mode: 'insensitive' } }),
       ...(query.ubicacionTecnica && { ubicacionTecnica: { contains: query.ubicacionTecnica, mode: 'insensitive' } }),
-      ...(includeTextSearch &&
-        query.q && {
-          OR: [
-            { descPosicionMant: { contains: query.q, mode: 'insensitive' } },
-            { denomObjetoTecnico: { contains: query.q, mode: 'insensitive' } },
-            { denomUbicacionTecnica: { contains: query.q, mode: 'insensitive' } },
-            { comentarios: { contains: query.q, mode: 'insensitive' } },
-          ],
-        }),
+      ...(andFilters.length > 0 && { AND: andFilters }),
     };
   }
 
@@ -986,6 +1136,8 @@ export class ScheduleService {
     execId: string,
     dto: {
       status?: ExecStatus;
+      dueDate?: string;
+      hhPlanned?: number;
       hhActual?: number;
       doneDate?: string;
       operator?: string;
@@ -998,11 +1150,14 @@ export class ScheduleService {
 
     const data: Prisma.TaskExecutionUpdateInput = {};
     if (dto.status) data.status = dto.status;
+    if (dto.dueDate) data.dueDate = new Date(dto.dueDate);
+    if (dto.hhPlanned != null) data.hhPlanned = new Prisma.Decimal(dto.hhPlanned);
     if (dto.hhActual != null) data.hhActual = new Prisma.Decimal(dto.hhActual);
     if (dto.doneDate) data.doneDate = new Date(dto.doneDate);
     if (dto.operator != null) data.operator = dto.operator;
     if (dto.notes != null) data.notes = dto.notes;
     if (dto.status === ExecStatus.DONE && !dto.doneDate) data.doneDate = new Date();
+    if (dto.dueDate || dto.hhPlanned != null) data.source = 'MANUAL';
 
     const after = await this.prisma.taskExecution.update({ where: { id: execId }, data });
     await this.audit.record({
@@ -1044,13 +1199,15 @@ function normalizeGroupKey(value: string | null | undefined): string {
 }
 
 function plantKey(task: PlantTaskRef): string {
-  return normalizeGroupKey(task.denomUbicacionTecnica ?? task.ubicacionTecnica);
+  return task.plant?.id ?? normalizeGroupKey(task.denomUbicacionTecnica ?? task.ubicacionTecnica);
 }
 
 function makePlantAccumulator(key: string, task: PlantTaskRef): PlantAccumulator {
   return {
     key,
-    name: normalizeGroupKey(task.denomUbicacionTecnica) === 'Sin dato' ? key : normalizeGroupKey(task.denomUbicacionTecnica),
+    id: task.plant?.id ?? null,
+    name: task.plant?.name ?? (normalizeGroupKey(task.denomUbicacionTecnica) === 'Sin dato' ? key : normalizeGroupKey(task.denomUbicacionTecnica)),
+    statusLabel: task.plant?.status ?? null,
     locationCode: task.ubicacionTecnica?.trim() || null,
     centroPlanificacion: task.centroPlanificacion?.trim() || null,
     psr: task.psr?.trim() || null,

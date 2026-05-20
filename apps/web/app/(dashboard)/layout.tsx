@@ -6,9 +6,10 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Eye, EyeOff } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
-import { FloatingAiChat } from './_components/FloatingAiChat';
 import { Sidebar } from './_components/Sidebar';
 import { Topbar } from './_components/Topbar';
+import { BottomNav } from './_components/BottomNav';
+import { PwaShell } from './_components/PwaShell';
 
 interface MeResponse {
   id: string;
@@ -67,19 +68,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="flex min-h-screen bg-bg">
+    <div className="flex min-h-[100dvh] bg-bg">
       <Sidebar mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
+        <PwaShell />
         <Topbar
           email={me.data?.email ?? ''}
           role={me.data?.role ?? ''}
           onMenuClick={() => setMobileOpen(true)}
         />
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 overflow-auto pb-[calc(env(safe-area-inset-bottom,0)+72px)] md:pb-0">
           <div className="mx-auto max-w-screen-2xl px-4 py-5 sm:px-6">{children}</div>
         </main>
+        <BottomNav />
       </div>
-      <FloatingAiChat />
     </div>
   );
 }

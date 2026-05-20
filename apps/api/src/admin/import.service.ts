@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { MaterializeService } from '../schedule/materialize.service';
 import { parseExcelBuffer } from './excel-parser';
+import { PlantCatalogService } from '../operations/plant-catalog.service';
 
 const TEMPLATE_CORE_HEADERS = [
   'Andamios',
@@ -48,6 +49,7 @@ export class ImportService {
     private prisma: PrismaService,
     private audit: AuditService,
     private materialize: MaterializeService,
+    private plantCatalog: PlantCatalogService,
   ) {}
 
   async template() {
@@ -121,6 +123,7 @@ export class ImportService {
   async previewFile(filename: string, buffer: Buffer) {
     const fileHash = createHash('sha256').update(buffer).digest('hex');
     const parsed = await parseExcelBuffer(buffer);
+    await this.plantCatalog.ensureSeedCatalog();
     const hashes = parsed.tasks.map((item) => item.sourceRowHash);
     const existing = hashes.length
       ? await this.prisma.maintenanceTask.findMany({
@@ -180,16 +183,39 @@ export class ImportService {
 
     let ok = 0;
     let err = 0;
+    const incomingHashes = parsed.tasks.map((item) => item.sourceRowHash).filter(Boolean);
+
+    await this.prisma.maintenanceTask.updateMany({
+      where: {
+        manualOverride: false,
+        sourceRowHash: { notIn: incomingHashes.length ? incomingHashes : ['__none__'] },
+        deletedAt: null,
+      },
+      data: { deletedAt: new Date() },
+    });
 
     for (const item of parsed.tasks) {
       try {
         await this.prisma.$transaction(async (tx) => {
+          const plantSource =
+            item.task.denomUbicacionTecnica ?? item.task.ubicacionTecnica ?? item.task.descPosicionMant ?? '';
+          const plant = await this.plantCatalog.resolveFromLocation(String(plantSource), tx);
+          const parsedHh = Number(item.task.hhReal ?? 0);
+          const taskData = {
+            ...item.task,
+            hhReal: Number.isFinite(parsedHh) ? parsedHh : 0,
+            plantId: plant?.id ?? null,
+            deletedAt: null,
+          };
           const existing = item.sourceRowHash
             ? await tx.maintenanceTask.findFirst({ where: { sourceRowHash: item.sourceRowHash } })
             : null;
+          if (existing?.manualOverride) {
+            return;
+          }
           const task = existing
-            ? await tx.maintenanceTask.update({ where: { id: existing.id }, data: item.task })
-            : await tx.maintenanceTask.create({ data: { ...item.task, sourceRowHash: item.sourceRowHash } });
+            ? await tx.maintenanceTask.update({ where: { id: existing.id }, data: { ...taskData, manualOverride: false } })
+            : await tx.maintenanceTask.create({ data: { ...taskData, manualOverride: false, sourceRowHash: item.sourceRowHash } });
 
           await tx.monthlySchedule.deleteMany({ where: { taskId: task.id, source: 'EXCEL' } });
           if (item.schedule.length > 0) {

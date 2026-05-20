@@ -1,10 +1,11 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { OperationalExecutionStatus, PlantStatus, Prisma, Role } from '@prisma/client';
+import { ExecStatus, OperationalExecutionStatus, PlantStatus, Prisma, Role } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import type { RequestContext } from '../common/request-context';
 import { PrismaService } from '../prisma/prisma.service';
 import { DeletePlantDto, ListPlantsDto, UpdatePlantDto, UpsertPlantDto } from './operations.dto';
 import { normalizePsr, sanitizeObject } from './sanitize';
+import { normalizePlantAlias } from './plant-catalog.service';
 
 const ACTIVE_EVIDENCE_WHERE = { deletedAt: null };
 const OPEN_STATUSES: OperationalExecutionStatus[] = [
@@ -31,15 +32,20 @@ export class PlantsService {
     const { q, status, area, take = 50, skip = 0 } = query;
     const where: Prisma.PlantWhereInput = {
       deletedAt: null,
+      maintenanceTasks: { some: { deletedAt: null } },
       ...(user.role === Role.VIEWER && { visibleToViewer: true }),
       ...(status && { status }),
       ...(area && { area }),
       ...(q && {
-        OR: [
+        AND: [
+          {
+            OR: [
           { psr: { contains: q, mode: 'insensitive' } },
           { name: { contains: q, mode: 'insensitive' } },
           { area: { contains: q, mode: 'insensitive' } },
           { equipment: { some: { name: { contains: q, mode: 'insensitive' }, deletedAt: null } } },
+            ],
+          },
         ],
       }),
     };
@@ -55,7 +61,24 @@ export class PlantsService {
             select: {
               equipment: { where: { deletedAt: null } },
               planTasks: { where: { deletedAt: null } },
+              maintenanceTasks: { where: { deletedAt: null } },
             },
+          },
+          aliases: { orderBy: { alias: 'asc' } },
+          maintenanceTasks: {
+            where: { deletedAt: null },
+            select: {
+              id: true,
+              hhReal: true,
+              schedule: { select: { year: true, month: true, hh: true } },
+              executions: {
+                where: { status: { in: [ExecStatus.PENDING, ExecStatus.OVERDUE] } },
+                select: { dueDate: true, hhPlanned: true, status: true },
+                orderBy: { dueDate: 'asc' },
+                take: 1,
+              },
+            },
+            take: 10000,
           },
           planTasks: {
             where: { deletedAt: null },
@@ -76,10 +99,20 @@ export class PlantsService {
     return {
       rows: rows.map((plant) => {
         const hhPlan = plant.planTasks.reduce((acc, task) => acc + Number(task.hhPlan), 0);
+        const excelHhBase = plant.maintenanceTasks.reduce((acc, task) => acc + Number(task.hhReal ?? 0), 0);
+        const excelScheduleHh = plant.maintenanceTasks.reduce(
+          (acc, task) => acc + task.schedule.reduce((sum, item) => sum + Number(item.hh), 0),
+          0,
+        );
         const nextDueDate =
-          plant.planTasks
+          [
+            ...plant.planTasks
             .flatMap((task) => task.executions)
-            .map((execution) => execution.dueDate)
+            .map((execution) => execution.dueDate),
+            ...plant.maintenanceTasks
+              .flatMap((task) => task.executions)
+              .map((execution) => execution.dueDate),
+          ]
             .sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
         return {
           id: plant.id,
@@ -92,7 +125,11 @@ export class PlantsService {
           visibleToViewer: plant.visibleToViewer,
           equipmentCount: plant._count.equipment,
           planTaskCount: plant._count.planTasks,
-          hhPlan,
+          maintenanceTaskCount: plant._count.maintenanceTasks,
+          taskCount: plant._count.maintenanceTasks + plant._count.planTasks,
+          aliases: plant.aliases.map((alias) => ({ id: alias.id, alias: alias.alias, source: alias.source })),
+          hhPlan: excelHhBase || hhPlan,
+          scheduleHh: excelScheduleHh,
           nextDueDate,
           createdAt: plant.createdAt,
           updatedAt: plant.updatedAt,
@@ -108,6 +145,15 @@ export class PlantsService {
     const plant = await this.prisma.plant.findUnique({
       where: { psr: normalizePsr(psr) },
       include: {
+        aliases: { orderBy: { alias: 'asc' } },
+        maintenanceTasks: {
+          where: { deletedAt: null },
+          include: {
+            schedule: { orderBy: [{ year: 'asc' }, { month: 'asc' }] },
+            executions: { orderBy: { dueDate: 'asc' }, take: 24 },
+          },
+          orderBy: [{ frecuenciaCodigo: 'asc' }, { descPosicionMant: 'asc' }],
+        },
         equipment: { where: { deletedAt: null }, orderBy: { name: 'asc' } },
         planTasks: {
           where: { deletedAt: null },
@@ -118,7 +164,32 @@ export class PlantsService {
     });
     if (!plant || plant.deletedAt) throw new NotFoundException('Plant not found');
     if (user.role === Role.VIEWER && !plant.visibleToViewer) throw new ForbiddenException('Plant not visible');
-    return plant;
+    const statusCounts = await this.prisma.taskExecution.groupBy({
+      by: ['status'],
+      where: { task: { plantId: plant.id, deletedAt: null } },
+      _count: { _all: true },
+      _sum: { hhPlanned: true, hhActual: true },
+    });
+    const nextDueDate =
+      plant.maintenanceTasks
+        .flatMap((task) => task.executions)
+        .filter((execution) => execution.status === ExecStatus.PENDING || execution.status === ExecStatus.OVERDUE)
+        .map((execution) => execution.dueDate)
+        .sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
+    return {
+      ...plant,
+      kpis: {
+        maintenanceTaskCount: plant.maintenanceTasks.length,
+        hhBase: plant.maintenanceTasks.reduce((sum, task) => sum + Number(task.hhReal ?? 0), 0),
+        nextDueDate,
+        statusCounts: statusCounts.map((row) => ({
+          status: row.status,
+          count: row._count._all,
+          hhPlanned: Number(row._sum.hhPlanned ?? 0),
+          hhActual: Number(row._sum.hhActual ?? 0),
+        })),
+      },
+    };
   }
 
   async summary(user: { role: Role }, psr: string) {
@@ -297,15 +368,48 @@ export class PlantsService {
   }
 
   async update(userId: string, psr: string, dto: UpdatePlantDto, ctx: RequestContext) {
-    const before = await this.prisma.plant.findUnique({ where: { psr: normalizePsr(psr) } });
+    const before = await this.prisma.plant.findUnique({
+      where: { psr: normalizePsr(psr) },
+      include: { aliases: true },
+    });
     if (!before || before.deletedAt) throw new NotFoundException('Plant not found');
     const clean = sanitizeObject(dto);
-    const after = await this.prisma.plant.update({
-      where: { id: before.id },
-      data: {
-        ...clean,
-        updatedById: userId,
-      },
+    const { aliases, ...plantData } = clean;
+    const after = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.plant.update({
+        where: { id: before.id },
+        data: {
+          ...plantData,
+          updatedById: userId,
+        },
+        include: { aliases: { orderBy: { alias: 'asc' } } },
+      });
+
+      if (aliases) {
+        const desired = [...new Set([updated.name, ...aliases].map((alias) => alias.trim()).filter(Boolean))];
+        const desiredNormalized = new Set(desired.map((alias) => normalizePlantAlias(alias)));
+        await tx.plantAlias.deleteMany({
+          where: {
+            plantId: before.id,
+            source: { in: ['USER', 'SYSTEM', 'EXCEL_CANDIDATE'] },
+            normalizedAlias: { notIn: [...desiredNormalized] },
+          },
+        });
+        for (const alias of desired) {
+          const normalizedAlias = normalizePlantAlias(alias);
+          if (!normalizedAlias) continue;
+          await tx.plantAlias.upsert({
+            where: { normalizedAlias },
+            update: { plantId: before.id, alias, source: 'USER' },
+            create: { plantId: before.id, alias, normalizedAlias, source: 'USER' },
+          });
+        }
+      }
+
+      return tx.plant.findUniqueOrThrow({
+        where: { id: before.id },
+        include: { aliases: { orderBy: { alias: 'asc' } } },
+      });
     });
     await this.audit.record({
       userId,

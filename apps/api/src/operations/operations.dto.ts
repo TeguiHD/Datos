@@ -11,6 +11,7 @@ import {
   Length,
   Max,
   Min,
+  IsArray,
 } from 'class-validator';
 
 export class ListPlantsDto {
@@ -39,6 +40,7 @@ export class UpdatePlantDto {
   @IsOptional() @IsEnum(PlantStatus) status?: PlantStatus;
   @IsOptional() @IsBoolean() visibleToViewer?: boolean;
   @IsOptional() @IsString() @Length(0, 500) inactiveReason?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) aliases?: string[];
 }
 
 export class DeletePlantDto {

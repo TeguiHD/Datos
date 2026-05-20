@@ -1,9 +1,12 @@
-import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsInt, IsNumber, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class ListTasksDto {
   @IsOptional() @IsString() q?: string;
   @IsOptional() @IsString() psr?: string;
+  @IsOptional() @IsString() plantId?: string;
+  @IsOptional() @IsString() planta?: string;
+  @IsOptional() @IsString() tipo?: string;
   @IsOptional() @IsString() abc?: string;
   @IsOptional() @IsString() frecuencia?: string;
   @IsOptional() @IsString() centroPlanificacion?: string;
@@ -18,6 +21,7 @@ export class ListTasksDto {
 }
 
 export class UpsertTaskDto {
+  @IsOptional() @IsString() plantId?: string;
   @IsOptional() @IsString() andamios?: string;
   @IsOptional() @IsString() materiales?: string;
   @IsOptional() @IsString() comentarios?: string;
@@ -43,9 +47,13 @@ export class UpsertTaskDto {
   @IsOptional() @IsString() hojaRuta?: string;
   @IsOptional() @IsString() claveModelo?: string;
   @IsOptional() @IsString() frecuenciaCodigo?: string;
-  @IsOptional() @Type(() => Number) hhReal?: number;
-  @IsOptional() @Type(() => Number) @IsInt() frecuenciaMeses?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(10000) hhReal?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(120) frecuenciaMeses?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(12) mesInicio?: number;
+}
+
+export class DeleteTaskDto {
+  @IsString() @Length(8, 8) confirmation!: string;
 }
 
 export class UpsertScheduleDto {

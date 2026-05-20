@@ -1,7 +1,8 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { realpath, stat } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { AuditService } from '../audit/audit.service';
 import type { RequestContext } from '../common/request-context';
 import { PrismaService } from '../prisma/prisma.service';
@@ -65,13 +66,19 @@ export class EvidenceService {
       throw new ForbiddenException('Evidence is not visible for viewer');
     }
 
+    const baseDir = resolve(process.env.EVIDENCE_DIR ?? './evidence');
+    let resolvedPath: string;
     try {
-      await stat(evidence.path);
+      resolvedPath = await realpath(evidence.path);
+      await stat(resolvedPath);
     } catch {
       throw new NotFoundException('Evidence file not found');
     }
+    if (!resolvedPath.startsWith(baseDir + '/') && resolvedPath !== baseDir) {
+      throw new ForbiddenException('Evidence path outside storage');
+    }
     return {
-      stream: createReadStream(evidence.path),
+      stream: createReadStream(resolvedPath),
       evidence: this.toEvidenceDto(evidence),
     };
   }

@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, LockKeyhole, Mail } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
+import { loginSchema, totpVerifySchema } from '@datos/shared-types/schemas';
+
+const TOTP_COOLDOWN_MS = 10_000;
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,17 +20,35 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [verifyingTotp, setVerifyingTotp] = useState(false);
   const [showTotpModal, setShowTotpModal] = useState(false);
+  const [totpCooldownUntil, setTotpCooldownUntil] = useState<number | null>(null);
+  const [now, setNow] = useState<number>(() => Date.now());
   const lastAutoCodeRef = useRef('');
+
+  useEffect(() => {
+    if (totpCooldownUntil == null || totpCooldownUntil <= Date.now()) return;
+    const i = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(i);
+  }, [totpCooldownUntil]);
+
+  const cooldownRemaining = totpCooldownUntil ? Math.max(0, Math.ceil((totpCooldownUntil - now) / 1000)) : 0;
+  const inCooldown = cooldownRemaining > 0;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
     setTotpErr(null);
+
+    const parsed = loginSchema.safeParse({ email, password });
+    if (!parsed.success) {
+      setErr(parsed.error.errors[0]?.message ?? 'Datos inválidos');
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await api<{ requiresTotpEnroll: boolean; requiresTotp: boolean; mustChangePass: boolean }>(
         '/api/auth/login',
-        { method: 'POST', body: JSON.stringify({ email, password }) },
+        { method: 'POST', body: JSON.stringify(parsed.data) },
       );
       if (res.requiresTotpEnroll) router.push('/setup-2fa');
       else if (res.requiresTotp) {
@@ -43,17 +64,24 @@ export default function LoginPage() {
   }
 
   async function verifyTotpCode(codeToVerify: string) {
+    if (inCooldown) return;
+    const parsed = totpVerifySchema.safeParse({ code: codeToVerify, rememberDevice });
+    if (!parsed.success) {
+      setTotpErr(parsed.error.errors[0]?.message ?? 'Código inválido');
+      return;
+    }
     setVerifyingTotp(true);
     try {
       await api('/api/auth/totp/verify', {
         method: 'POST',
-        body: JSON.stringify({ code: codeToVerify, rememberDevice }),
+        body: JSON.stringify(parsed.data),
       });
       router.push('/dashboard');
     } catch {
       setTotpErr('Código inválido');
       setTotpCode('');
       lastAutoCodeRef.current = '';
+      setTotpCooldownUntil(Date.now() + TOTP_COOLDOWN_MS);
     } finally {
       setVerifyingTotp(false);
     }
@@ -62,25 +90,20 @@ export default function LoginPage() {
   async function verifyTotp(e: React.FormEvent) {
     e.preventDefault();
     setTotpErr(null);
-
-    if (totpCode.length !== 6) {
-      setTotpErr('Ingresa un código de 6 dígitos');
-      return;
-    }
-
     await verifyTotpCode(totpCode);
   }
 
   useEffect(() => {
     if (!showTotpModal) return;
     if (verifyingTotp) return;
+    if (inCooldown) return;
     if (totpCode.length !== 6) return;
     if (lastAutoCodeRef.current === totpCode) return;
 
     lastAutoCodeRef.current = totpCode;
     setTotpErr(null);
     void verifyTotpCode(totpCode);
-  }, [showTotpModal, totpCode, verifyingTotp]);
+  }, [showTotpModal, totpCode, verifyingTotp, inCooldown]);
 
   const disableLogin = loading || showTotpModal;
 
@@ -149,7 +172,7 @@ export default function LoginPage() {
             {loading ? 'Ingresando…' : 'Entrar'}
           </button>
 
-          <p className="mt-4 text-center text-xs text-slate-500">Acceso protegido por segundo factor (2FA) obligatorio.</p>
+          <p className="mt-4 text-center text-xs text-slate-500">Acceso temporal de revisión sin segundo factor.</p>
         </form>
       </div>
 
@@ -167,11 +190,19 @@ export default function LoginPage() {
               maxLength={6}
               required
               autoFocus
+              autoComplete="one-time-code"
               value={totpCode}
               onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              className="mt-4 w-full rounded-md border px-3 py-2 tracking-widest text-center text-lg"
+              disabled={inCooldown}
+              className="mt-4 w-full rounded-md border px-3 py-2 tracking-widest text-center text-lg disabled:bg-slate-100"
               placeholder="123456"
+              aria-describedby={totpErr ? 'totp-error' : undefined}
             />
+            {inCooldown && (
+              <p className="mt-2 text-center text-xs text-slate-500">
+                Espera {cooldownRemaining}s para reintentar.
+              </p>
+            )}
 
             <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
               <input
@@ -184,7 +215,7 @@ export default function LoginPage() {
             </label>
 
             {totpErr && (
-              <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{totpErr}</p>
+              <p id="totp-error" role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{totpErr}</p>
             )}
 
             <div className="mt-4 flex gap-2">
@@ -202,10 +233,10 @@ export default function LoginPage() {
               </button>
               <button
                 type="submit"
-                disabled={verifyingTotp}
+                disabled={verifyingTotp || inCooldown}
                 className="w-2/3 rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-brand-900 disabled:opacity-60"
               >
-                {verifyingTotp ? 'Verificando…' : 'Verificar'}
+                {verifyingTotp ? 'Verificando…' : inCooldown ? `Espera ${cooldownRemaining}s` : 'Verificar'}
               </button>
             </div>
           </form>

@@ -47,6 +47,8 @@ export class UpcomingDto {
 export class HeatmapDto {
   @Type(() => Number) @IsInt() @Min(2000) @Max(2100) from!: number;
   @Type(() => Number) @IsInt() @Min(2000) @Max(2100) to!: number;
+  @IsOptional() @IsString() plantId?: string;
+  @IsOptional() @IsString() planta?: string;
 }
 
 export class MonthlyDto {
@@ -58,8 +60,17 @@ export class YearDto {
   @Type(() => Number) @IsInt() @Min(2000) @Max(2100) year!: number;
 }
 
+export class MatrixDto {
+  @Type(() => Number) @IsInt() @Min(2000) @Max(2100) yearFrom!: number;
+  @Type(() => Number) @IsInt() @Min(2000) @Max(2100) yearTo!: number;
+  @IsOptional() @IsString() plantId?: string;
+  @IsOptional() @IsString() q?: string;
+}
+
 export class ExecutionFiltersBaseDto {
   @IsOptional() @IsString() q?: string;
+  @IsOptional() @IsString() plantId?: string;
+  @IsOptional() @IsString() planta?: string;
   @IsOptional() @IsEnum(ExecStatus) status?: ExecStatus;
   @IsOptional() @IsString() abc?: string;
   @IsOptional() @IsString() frecuencia?: string;
@@ -116,6 +127,8 @@ export class UpdateSavedViewDto extends SavedViewParamsDto {
 
 export class UpdateExecutionDto {
   @IsOptional() @IsEnum(ExecStatus) status?: ExecStatus;
+  @IsOptional() @IsISO8601() dueDate?: string;
+  @IsOptional() @Type(() => Number) hhPlanned?: number;
   @IsOptional() @Type(() => Number) hhActual?: number;
   @IsOptional() @IsISO8601() doneDate?: string;
   @IsOptional() @IsString() @Length(1, 128) operator?: string;

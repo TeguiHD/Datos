@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ExecStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { HhResolverService } from '../hh-defaults/hh-resolver';
 import {
   generateOccurrences,
   resolveFrecuenciaMeses,
@@ -25,12 +26,16 @@ export class MaterializeService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    private hhResolver: HhResolverService,
   ) {}
 
   async rebuildAll(actorId: string | null, ctx: { ip: string; userAgent: string }) {
     const tasks = await this.prisma.maintenanceTask.findMany({
+      where: { deletedAt: null },
       include: { schedule: true },
     });
+
+    await this.hhResolver.refresh();
 
     const now = new Date();
     const horizonYear = now.getUTCFullYear() + HORIZON_YEARS;
@@ -45,9 +50,18 @@ export class MaterializeService {
       const excelSchedule = task.schedule.filter((s) => s.source === 'EXCEL');
       const meses = resolveFrecuenciaMeses(task.frecuenciaMeses, task.frecuenciaCodigo);
       const mesInicio = task.mesInicio ?? inferMesInicio(excelSchedule);
-      const hhPlanned = task.hhReal != null ? Number(task.hhReal) : inferHh(excelSchedule);
+      let hhPlanned = task.hhReal != null ? Number(task.hhReal) : (inferHh(excelSchedule) ?? (excelSchedule.length > 0 ? 0 : null));
+      // Si el Excel no trae HH (caso ESSC Sur), intentar resolver vía reglas HhDefault.
+      if ((hhPlanned == null || hhPlanned === 0) && (meses || task.frecuenciaCodigo)) {
+        const resolved = await this.hhResolver.resolve({
+          plantId: task.plantId,
+          frecuenciaCodigo: task.frecuenciaCodigo,
+          abc: task.indicadorAbc,
+        });
+        if (resolved != null) hhPlanned = resolved;
+      }
       const anchorYear = inferAnchorYear(excelSchedule) ?? ANCHOR_FROM_YEAR;
-      if (!meses || !mesInicio || !hhPlanned || hhPlanned <= 0) continue;
+      if (!meses || !mesInicio || hhPlanned == null || hhPlanned < 0) continue;
 
       const occ = generateOccurrences(
         {
@@ -84,7 +98,7 @@ export class MaterializeService {
         // 2) Reconciliar TaskExecution PENDING y crear faltantes futuras.
         const existingExec = await tx.taskExecution.findMany({
           where: { taskId: task.id },
-          select: { id: true, dueDate: true, status: true, hhPlanned: true },
+          select: { id: true, dueDate: true, status: true, hhPlanned: true, source: true },
         });
 
         const occAllByKey = new Map(occ.map((o) => [ymKey(o.year, o.month), o.hhPlanned]));
@@ -93,6 +107,7 @@ export class MaterializeService {
         const existingByKey = new Map<string, (typeof existingExec)[number]>();
 
         for (const ex of existingExec) {
+          if (ex.source === 'MANUAL') continue;
           const key = ymKey(ex.dueDate.getUTCFullYear(), ex.dueDate.getUTCMonth() + 1);
           existingByKey.set(key, ex);
           if (ex.status !== ExecStatus.PENDING) continue;
@@ -120,6 +135,7 @@ export class MaterializeService {
                 dueDate: ymToDate(o.year, o.month),
                 hhPlanned: new Prisma.Decimal(o.hhPlanned),
                 status: ExecStatus.PENDING,
+                source: 'CALC',
               },
             });
             executionsCreated++;
@@ -190,7 +206,7 @@ function inferMesInicio(schedule: { year: number; month: number }[]): number | n
 function inferHh(schedule: { hh: Prisma.Decimal }[]): number | null {
   if (schedule.length === 0) return null;
   const max = Math.max(...schedule.map((s) => Number(s.hh)));
-  return Number.isFinite(max) && max > 0 ? max : null;
+  return Number.isFinite(max) && max >= 0 ? max : null;
 }
 
 function inferAnchorYear(schedule: { year: number }[]): number | null {

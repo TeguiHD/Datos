@@ -24,6 +24,7 @@ enum ExecStatus {
 
 enum PlantStatus {
   ACTIVE
+  STANDBY
   INACTIVE
 }
 
@@ -147,6 +148,8 @@ model Session {
 
 model MaintenanceTask {
   id                    String            @id @default(cuid())
+  plantId               String?
+  plant                 Plant?            @relation(fields: [plantId], references: [id], onDelete: SetNull)
   andamios              String?
   materiales            String?
   comentarios           String?
@@ -177,6 +180,8 @@ model MaintenanceTask {
   frecuenciaMeses       Int?
   mesInicio             Int?
   sourceRowHash         String?
+  manualOverride        Boolean           @default(false)
+  deletedAt             DateTime?
   hasDiscrepancy        Boolean           @default(false)
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
@@ -184,11 +189,14 @@ model MaintenanceTask {
   executions            TaskExecution[]
 
   @@index([indicadorAbc])
+  @@index([plantId])
   @@index([frecuenciaCodigo])
   @@index([psr])
   @@index([centroPlanificacion])
   @@index([ubicacionTecnica])
   @@index([equipo])
+  @@index([manualOverride])
+  @@index([deletedAt])
 }
 
 model MonthlySchedule {
@@ -212,6 +220,7 @@ model TaskExecution {
   hhPlanned Decimal         @db.Decimal(10, 2)
   hhActual  Decimal?        @db.Decimal(10, 2)
   status    ExecStatus      @default(PENDING)
+  source    String          @default("CALC")
   operator  String?
   notes     String?
   createdAt DateTime        @default(now())
@@ -220,6 +229,7 @@ model TaskExecution {
   @@unique([taskId, dueDate])
   @@index([dueDate])
   @@index([status])
+  @@index([source])
   @@index([taskId, status])
 }
 
@@ -242,10 +252,25 @@ model Plant {
   updatedAt       DateTime              @updatedAt
   equipment       Equipment[]
   planTasks       MaintenancePlanTask[]
+  maintenanceTasks MaintenanceTask[]
+  aliases         PlantAlias[]
 
   @@index([status])
   @@index([area])
   @@index([deletedAt])
+}
+
+model PlantAlias {
+  id              String   @id @default(cuid())
+  plantId         String
+  plant           Plant    @relation(fields: [plantId], references: [id], onDelete: Cascade)
+  alias           String
+  normalizedAlias String   @unique
+  source          String   @default("SYSTEM")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([plantId])
 }
 
 model Equipment {
@@ -385,4 +410,54 @@ model ImportRun {
   status    String
   message   String?
   createdAt DateTime @default(now())
+}
+
+model HhDefault {
+  id              String   @id @default(cuid())
+  scope           String   // 'GLOBAL' | 'PLANT' | 'PLANT_FREQ' | 'PLANT_FREQ_ABC' | 'FREQ' | 'FREQ_ABC' | 'ABC'
+  plantId         String?
+  frecuenciaCodigo String?
+  abc             String?
+  hhPlan          Decimal  @db.Decimal(10, 2)
+  priority        Int      @default(0) // mayor gana ante empate de especificidad
+  note            String?
+  createdById     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([scope, plantId, frecuenciaCodigo, abc])
+  @@index([plantId])
+  @@index([frecuenciaCodigo])
+  @@index([abc])
+}
+
+model IdempotencyRecord {
+  key       String   @id
+  userId    String?
+  scope     String
+  bodyHash  String
+  response  Json
+  statusCode Int
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([expiresAt])
+  @@index([userId, scope])
+}
+
+model ReportRun {
+  id           String   @id @default(cuid())
+  generatedById String?
+  scope        String
+  params       Json
+  format       String
+  filename     String
+  sizeBytes    Int
+  sha256       String
+  signature    String
+  generatedAt  DateTime @default(now())
+
+  @@index([generatedById, generatedAt])
+  @@index([scope, generatedAt])
+  @@index([sha256])
 }

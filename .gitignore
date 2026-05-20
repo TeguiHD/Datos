@@ -19,3 +19,8 @@ idea.txt
 # Prisma
 apps/api/prisma/migrations/*/migration.sql.journal
 .superpowers/
+
+# Tooling caches / installed skills
+.codegraph/
+.agents/
+skills-lock.json

@@ -12,6 +12,7 @@ import {
   GroupExecutionsDto,
   HeatmapDto,
   ListExecutionsDto,
+  MatrixDto,
   MonthlyDto,
   PlantListDto,
   PipelineDto,
@@ -40,7 +41,12 @@ export class ScheduleController {
 
   @Get('heatmap')
   heatmap(@Query() q: HeatmapDto) {
-    return this.schedule.heatmap(q.from, q.to);
+    return this.schedule.heatmap(q);
+  }
+
+  @Get('matrix')
+  matrix(@Query() q: MatrixDto) {
+    return this.schedule.matrix(q);
   }
 
   @Get('kpis')

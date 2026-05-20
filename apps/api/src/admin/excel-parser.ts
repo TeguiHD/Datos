@@ -46,6 +46,9 @@ const CORE_COLS: Record<number, string> = {
 };
 
 const MONTHLY_START_COL = 30; // column 30 = AD
+const ESSC_HEADER_ROW = 5;
+const ESSC_FIRST_DATA_ROW = 6;
+const ESSC_MONTHLY_START_COL = 13; // column 13 = M
 const MONTHLY_FALLBACK_COUNT = 84; // ene-22 → dic-28 (retrocompatibilidad)
 const MAX_MONTH_COL_SCAN = 360; // hasta 30 años de columnas mensuales
 const MONTH_SCAN_BREAK_STREAK = 12;
@@ -75,6 +78,7 @@ function cellValue(v: ExcelJS.CellValue): unknown {
   if (v == null) return null;
   if (typeof v === 'object' && 'text' in (v as object)) return (v as { text: string }).text;
   if (typeof v === 'object' && 'result' in (v as object)) return (v as { result: unknown }).result;
+  if (typeof v === 'object' && ('formula' in (v as object) || 'sharedFormula' in (v as object))) return null;
   return v;
 }
 
@@ -134,12 +138,12 @@ function parseHeaderMonth(v: unknown): { year: number; month: number } | null {
   return { year, month };
 }
 
-function deriveMonthColumns(headerRow: ExcelJS.Row): MonthCol[] {
+function deriveMonthColumns(headerRow: ExcelJS.Row, startCol = MONTHLY_START_COL): MonthCol[] {
   const cols: MonthCol[] = [];
   let missStreak = 0;
 
   for (let i = 0; i < MAX_MONTH_COL_SCAN; i++) {
-    const col = MONTHLY_START_COL + i;
+    const col = startCol + i;
     const parsed = parseHeaderMonth(cellValue(headerRow.getCell(col).value));
     if (!parsed) {
       if (cols.length > 0) {
@@ -180,6 +184,10 @@ export async function parseExcelBuffer(buffer: Buffer): Promise<{ tasks: ParsedT
   const ws = wb.worksheets[0];
   if (!ws) throw new Error('No worksheet');
 
+  if (isEsscSurLayout(ws)) {
+    return parseEsscSurWorksheet(ws);
+  }
+
   // Month columns: derive year/month from row 8 (serial date or label like ene-22).
   const headerRow = ws.getRow(8);
   const monthCols = deriveMonthColumns(headerRow);
@@ -215,6 +223,66 @@ export async function parseExcelBuffer(buffer: Buffer): Promise<{ tasks: ParsedT
     }
 
     const hash = createHash('sha256').update(JSON.stringify(task)).digest('hex');
+    tasks.push({ task, schedule, sourceRowHash: hash });
+  }
+
+  return { tasks };
+}
+
+function isEsscSurLayout(ws: ExcelJS.Worksheet): boolean {
+  const header = ws.getRow(ESSC_HEADER_ROW);
+  return (
+    toStr(cellValue(header.getCell(2).value)) === 'Elemento PEP (WBS)' &&
+    toStr(cellValue(header.getCell(8).value)) === 'Actividad MP' &&
+    parseHeaderMonth(cellValue(header.getCell(ESSC_MONTHLY_START_COL).value)) != null
+  );
+}
+
+function parseEsscSurWorksheet(ws: ExcelJS.Worksheet): { tasks: ParsedTask[] } {
+  const headerRow = ws.getRow(ESSC_HEADER_ROW);
+  const monthCols = deriveMonthColumns(headerRow, ESSC_MONTHLY_START_COL);
+  const tasks: ParsedTask[] = [];
+  const lastRow = ws.actualRowCount;
+  if (lastRow > MAX_ROWS) {
+    throw new Error(`Excel has too many rows (${lastRow})`);
+  }
+
+  for (let r = ESSC_FIRST_DATA_ROW; r <= lastRow; r++) {
+    const row = ws.getRow(r);
+    const location = toStr(cellValue(row.getCell(5).value));
+    const activity = toStr(cellValue(row.getCell(8).value));
+    const plan = toStr(cellValue(row.getCell(3).value));
+    const equipment = toStr(cellValue(row.getCell(6).value));
+    if (!location && !activity && !plan && !equipment) continue;
+
+    const task: Record<string, unknown> = {
+      psr: toStr(cellValue(row.getCell(2).value)),
+      planMantPreventivo: plan,
+      hojaRuta: toStr(cellValue(row.getCell(4).value)),
+      ubicacionTecnica: location,
+      denomUbicacionTecnica: location,
+      equipo: equipment,
+      denomObjetoTecnico: equipment,
+      posicionMant: toStr(cellValue(row.getCell(7).value)),
+      descPosicionMant: activity,
+      frecuenciaCodigo: toStr(cellValue(row.getCell(9).value)) ?? toStr(cellValue(row.getCell(10).value)),
+      claveModelo: toStr(cellValue(row.getCell(10).value)),
+      frecuenciaMeses: toInt(cellValue(row.getCell(11).value)),
+      mesInicio: toInt(cellValue(row.getCell(12).value)),
+      comentarios: 'Formato ESSC Sur',
+    };
+
+    const schedule: { year: number; month: number; hh: number }[] = [];
+    for (const meta of monthCols) {
+      const mark = toStr(cellValue(row.getCell(meta.col).value));
+      if (mark) {
+        // Este formato marca vencimientos con códigos (1A, 6M, 5A, 1M), no HH.
+        // Se importa como 0 HH para no inventar horas inexistentes en el documento.
+        schedule.push({ year: meta.year, month: meta.month, hh: 0 });
+      }
+    }
+
+    const hash = createHash('sha256').update(JSON.stringify({ task, schedule })).digest('hex');
     tasks.push({ task, schedule, sourceRowHash: hash });
   }
 

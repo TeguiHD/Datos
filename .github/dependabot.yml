@@ -1,0 +1,50 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/Santiago
+    open-pull-requests-limit: 8
+    versioning-strategy: increase-if-necessary
+    groups:
+      types:
+        patterns: ['@types/*']
+      eslint:
+        patterns: ['eslint*', '@eslint/*', 'eslint-*']
+      nest:
+        patterns: ['@nestjs/*']
+      prisma:
+        patterns: ['prisma', '@prisma/*']
+      next-react:
+        patterns: ['next', 'next-*', 'react', 'react-*', '@radix-ui/*', '@tanstack/*']
+      minor-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+    ignore:
+      - dependency-name: 'next'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'react'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'react-dom'
+        update-types: ['version-update:semver-major']
+    labels: ['deps', 'automerge-candidate']
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 4
+    labels: ['ci', 'deps']
+
+  - package-ecosystem: docker
+    directory: /infra
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 4
+    labels: ['infra', 'deps']

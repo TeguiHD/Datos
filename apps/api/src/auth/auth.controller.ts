@@ -68,9 +68,9 @@ export class AuthController {
       res.clearCookie(TRUSTED_2FA_COOKIE, clearCookieOpts());
     }
 
-    const requiresTotpEnroll = !user.totpEnabled;
+    const requiresTotpEnroll = false;
     const requiresTotp = user.totpEnabled && !trustedDevice;
-    const tfaVerified = user.totpEnabled && trustedDevice;
+    const tfaVerified = !user.totpEnabled || trustedDevice;
 
     // Only trusted devices for users with TOTP enabled can skip second factor.
     const { accessToken, refreshToken } = await this.auth.issueTokens(user, tfaVerified, ctx);

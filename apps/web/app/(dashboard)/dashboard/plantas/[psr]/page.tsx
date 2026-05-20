@@ -4,909 +4,430 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  AlertTriangle,
-  ArrowLeft,
-  CalendarClock,
-  ClipboardList,
-  ExternalLink,
-  FileArchive,
-  FileImage,
-  FileText,
-  History,
-  Paperclip,
-  Plus,
-  Search,
-  ShieldCheck,
-  Video,
-  Wrench,
-} from 'lucide-react';
-import { api, ApiError } from '@/lib/api';
+import { ArrowLeft, CalendarClock, CheckCircle2, ClipboardList, Pencil, Plus, SkipForward, Trash2 } from 'lucide-react';
+import { api } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ExecutionPanel } from '../_components/ExecutionPanel';
+import { hh as fmtHh, int, dateFormat } from '@/lib/i18n/formatters';
+import { plantStatusLabels } from '@datos/shared-types';
+import { PlantCalendarHeatmap } from '../../_components/PlantCalendarHeatmap';
 
-type PlantStatus = 'ACTIVE' | 'INACTIVE';
-type EquipmentType = 'MOTOR' | 'PUMP' | 'FILTER' | 'PANEL' | 'OTHER';
-type PlanFrequency = 'MONTHLY' | 'QUARTERLY' | 'SEMIANNUAL' | 'ANNUAL' | 'CUSTOM';
-type OperationalExecutionStatus =
-  | 'SCHEDULED'
-  | 'IN_PROGRESS'
-  | 'DONE_PENDING_APPROVAL'
-  | 'APPROVED'
-  | 'REJECTED'
-  | 'SKIPPED'
-  | 'POSTPONED';
-
-interface MeResponse {
-  role: string;
-}
-
-interface Equipment {
-  id: string;
-  type: EquipmentType;
-  name: string;
-  model: string | null;
-  serial: string | null;
-  notes: string | null;
-}
-
-interface PlanTask {
-  id: string;
-  equipmentId: string | null;
-  equipment?: Equipment | null;
-  abc: string | null;
-  description: string;
-  frequency: PlanFrequency;
-  cronExpression: string | null;
-  hhPlan: string | number;
-  active: boolean;
-  executions?: { id: string; dueDate: string; status: OperationalExecutionStatus }[];
-}
+type PlantStatus = 'ACTIVE' | 'STANDBY' | 'INACTIVE';
+type ExecStatus = 'PENDING' | 'OVERDUE' | 'DONE' | 'SKIPPED';
 
 interface PlantDetail {
   id: string;
   psr: string;
   name: string;
-  description: string | null;
-  area: string | null;
-  color: string | null;
   status: PlantStatus;
-  visibleToViewer: boolean;
-  equipment: Equipment[];
-  planTasks: PlanTask[];
-}
-
-interface AuditRow {
-  id: string;
-  action: string;
-  entity: string | null;
-  entityId: string | null;
-  createdAt: string;
-  user: { email: string; role: string } | null;
-}
-
-interface PlantSummary {
-  plant: {
-    id: string;
-    psr: string;
-    name: string;
-    description: string | null;
-    area: string | null;
-    color: string | null;
-    status: PlantStatus;
-    visibleToViewer: boolean;
-    equipmentCount: number;
-    planTaskCount: number;
-  };
+  aliases: Array<{ id: string; alias: string; source: string }>;
+  maintenanceTasks: TaskRow[];
   kpis: {
-    overdue: number;
-    next30: number;
-    pendingReview: number;
-    rejected: number;
-    missingEvidence: number;
-    complianceRate: number | null;
-    hhPlan: number;
-    hhActual: number;
-  };
-  statusSplit: Record<OperationalExecutionStatus, number>;
-  lastEvidence: {
-    id: string;
-    originalName: string | null;
-    mime: string;
-    sizeBytes: number;
-    uploadedAt: string;
-    description: string | null;
-    executionId: string;
-    planTask: {
-      id: string;
-      description: string;
-      equipment: { id: string; name: string } | null;
-    };
-  } | null;
-  upcoming: {
-    id: string;
-    dueDate: string;
-    status: OperationalExecutionStatus;
-    hhPlan: number;
-    evidenceCount: number;
-    planTask: {
-      id: string;
-      abc: string | null;
-      description: string;
-      equipment: { id: string; name: string; type: EquipmentType } | null;
-    };
-  }[];
-  recentChanges: AuditRow[];
-}
-
-interface EvidenceRow {
-  id: string;
-  filename: string;
-  originalName: string | null;
-  mime: string;
-  sizeBytes: number;
-  description: string | null;
-  uploadedAt: string;
-  sha256: string;
-}
-
-interface ExecutionRow {
-  id: string;
-  dueDate: string;
-  status: OperationalExecutionStatus;
-  hhPlan: number;
-  hhActual: number | null;
-  evidenceCount: number;
-  evidence: EvidenceRow[];
-  planTask: {
-    id: string;
-    abc: string | null;
-    description: string;
-    equipment: { id: string; name: string; type: EquipmentType } | null;
-    plant: { id: string; psr: string; name: string; area: string | null };
+    maintenanceTaskCount: number;
+    hhBase: number;
+    nextDueDate: string | null;
+    statusCounts: Array<{ status: ExecStatus; count: number; hhPlanned: number; hhActual: number }>;
   };
 }
 
-interface ExecutionList {
-  rows: ExecutionRow[];
-  total: number;
+interface TaskRow {
+  id: string;
+  plantId: string | null;
+  descPosicionMant: string | null;
+  denomUbicacionTecnica: string | null;
+  equipo: string | null;
+  denomObjetoTecnico: string | null;
+  frecuenciaCodigo: string | null;
+  frecuenciaMeses: number | null;
+  mesInicio: number | null;
+  hhReal: string | number | null;
+  manualOverride: boolean;
+  schedule: Array<{ year: number; month: number; hh: string | number; source: string }>;
+  executions: Array<{ id: string; dueDate: string; status: ExecStatus; hhPlanned: string | number; hhActual: string | number | null; notes: string | null }>;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
-const DATE = new Intl.DateTimeFormat('es-CL', { day: '2-digit', month: 'short', year: 'numeric' });
-const DATETIME = new Intl.DateTimeFormat('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-const HH = new Intl.NumberFormat('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-const PCT = new Intl.NumberFormat('es-CL', { maximumFractionDigits: 0 });
+const DATE = dateFormat;
 
-const EQUIPMENT_LABELS: Record<EquipmentType, string> = {
-  MOTOR: 'Motor',
-  PUMP: 'Bomba',
-  FILTER: 'Filtro',
-  PANEL: 'Tablero',
-  OTHER: 'Otro',
-};
-
-const FREQUENCY_LABELS: Record<PlanFrequency, string> = {
-  MONTHLY: 'Mensual',
-  QUARTERLY: 'Trimestral',
-  SEMIANNUAL: 'Semestral',
-  ANNUAL: 'Anual',
-  CUSTOM: 'Custom',
-};
-
-const STATUS_LABELS: Record<OperationalExecutionStatus, string> = {
-  SCHEDULED: 'Programada',
-  IN_PROGRESS: 'En curso',
-  DONE_PENDING_APPROVAL: 'Pendiente revisión',
-  APPROVED: 'Aprobada',
-  REJECTED: 'Rechazada',
-  SKIPPED: 'Omitida',
-  POSTPONED: 'Postergada',
-};
-
-const ACTION_LABELS: Record<string, string> = {
-  PLANT_CREATE: 'Planta creada',
-  PLANT_UPDATE: 'Planta actualizada',
-  PLANT_DELETE: 'Planta desactivada',
-  EQUIPMENT_CREATE: 'Equipo creado',
-  EQUIPMENT_UPDATE: 'Equipo actualizado',
-  EQUIPMENT_DELETE: 'Equipo eliminado',
-  PLAN_TASK_CREATE: 'Tarea creada',
-  PLAN_TASK_UPDATE: 'Tarea actualizada',
-  PLAN_TASK_DELETE: 'Tarea eliminada',
-  PLAN_TASK_GENERATE_EXECUTIONS: 'Ejecuciones generadas',
-  OPERATIONAL_EXECUTION_REGISTER: 'Ejecución registrada',
-  OPERATIONAL_EXECUTION_APPROVE: 'Ejecución aprobada',
-  OPERATIONAL_EXECUTION_REJECT: 'Ejecución rechazada',
-  OPERATIONAL_EXECUTION_REOPEN: 'Ejecución reabierta',
-  EVIDENCE_UPLOAD: 'Evidencia cargada',
-  EVIDENCE_DELETE: 'Evidencia eliminada',
-};
+const FREQUENCIES = [
+  { code: '1M', label: 'Mensual', months: 1 },
+  { code: '6M', label: 'Semestral', months: 6 },
+  { code: '1A', label: 'Anual', months: 12 },
+  { code: '5A', label: 'Quinquenal', months: 60 },
+];
 
 export default function PlantDetailPage() {
   const params = useParams<{ psr: string }>();
-  const psr = decodeURIComponent(params.psr ?? '');
-  const encodedPsr = encodeURIComponent(psr);
+  const psr = decodeURIComponent(params.psr);
+  const queryClient = useQueryClient();
+  const [editingTask, setEditingTask] = useState<TaskRow | 'new' | null>(null);
+  const [deletingTask, setDeletingTask] = useState<TaskRow | null>(null);
 
-  const me = useQuery({
-    queryKey: ['auth-me'],
-    queryFn: () => api<MeResponse>('/api/auth/me'),
-  });
-  const canWrite = me.data?.role === 'SUPERADMIN';
-
-  const detail = useQuery({
+  const plant = useQuery({
     queryKey: ['plant-detail', psr],
-    queryFn: () => api<PlantDetail>(`/api/plantas/${encodedPsr}`),
-    enabled: Boolean(psr),
+    queryFn: () => api<PlantDetail>(`/api/plantas/${encodeURIComponent(psr)}`),
   });
 
-  const summary = useQuery({
-    queryKey: ['plant-summary', psr],
-    queryFn: () => api<PlantSummary>(`/api/plantas/${encodedPsr}/resumen`),
-    enabled: Boolean(psr),
-    refetchInterval: 60_000,
-  });
+  const row = plant.data;
+  const status = statusMap(row?.kpis.statusCounts ?? []);
+  const upcoming = useMemo(
+    () =>
+      (row?.maintenanceTasks ?? [])
+        .flatMap((task) => task.executions.map((execution) => ({ ...execution, task })))
+        .filter((execution) => execution.status === 'PENDING' || execution.status === 'OVERDUE')
+        .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+        .slice(0, 12),
+    [row],
+  );
 
-  const executions = useQuery({
-    queryKey: ['plant-evidence-executions', psr],
-    queryFn: () => api<ExecutionList>(`/api/ejecuciones?psr=${encodedPsr}&take=300`),
-    enabled: Boolean(psr),
-    refetchInterval: 60_000,
-  });
-
-  const history = useQuery({
-    queryKey: ['plant-history', psr],
-    queryFn: () => api<AuditRow[]>(`/api/plantas/${encodedPsr}/historico?take=120`),
-    enabled: Boolean(psr),
-  });
-
-  const plant = detail.data;
-  const summaryPlant = summary.data?.plant;
+  if (plant.isLoading) return <div className="skeleton h-80 rounded-xl" />;
+  if (!row) return <PanelState title="No se pudo cargar la planta" detail="Revisa sesión, permisos o disponibilidad del API." />;
 
   return (
-    <div className="flex flex-col gap-5 p-4 md:p-6">
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
-          <Button asChild variant="outline" size="sm">
-            <Link href="/dashboard/plantas">
-              <ArrowLeft data-icon="inline-start" />
-              Plantas
-            </Link>
-          </Button>
-          <div className="mt-4 flex min-w-0 items-start gap-3">
-            <div
-              className="flex size-12 shrink-0 items-center justify-center rounded-lg text-base font-semibold text-white"
-              style={{ backgroundColor: plant?.color ?? summaryPlant?.color ?? '#0ea5e9' }}
-            >
-              {(plant?.name ?? summaryPlant?.name ?? psr).slice(0, 1).toUpperCase()}
+    <div className="flex flex-col gap-5 fade-up">
+      <header className="flex flex-col gap-3">
+        <Link href="/dashboard/plantas" className="inline-flex w-fit items-center gap-2 text-sm text-ds-muted hover:text-text">
+          <ArrowLeft className="size-4" />
+          Plantas
+        </Link>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-semibold text-text">{row.name}</h1>
+              <StatusBadge status={row.status} />
             </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="truncate text-2xl font-semibold text-text">{plant?.name ?? summaryPlant?.name ?? psr}</h1>
-                <Badge variant="outline" className={(plant?.status ?? summaryPlant?.status) === 'INACTIVE' ? 'border-neutral-300 text-ds-muted' : 'border-ok/30 bg-ok-dim text-ok'}>
-                  {(plant?.status ?? summaryPlant?.status) === 'INACTIVE' ? 'Inactiva' : 'Activa'}
-                </Badge>
-                {(plant?.visibleToViewer ?? summaryPlant?.visibleToViewer) && (
-                  <Badge variant="outline" className="border-ds-accent/30 bg-accent-dim text-ds-accent">
-                    <ShieldCheck data-icon="inline-start" />
-                    Visible
-                  </Badge>
-                )}
-              </div>
-              <p className="mt-1 font-mono text-xs text-ds-muted">{psr}</p>
-              <p className="mt-2 max-w-3xl text-sm text-ds-muted">{plant?.description ?? plant?.area ?? 'Sin descripción operacional.'}</p>
-            </div>
+            <p className="mt-1 text-sm text-ds-muted">
+              <span className="font-mono">{row.psr}</span> · {row.aliases.length} alias{row.aliases.length === 1 ? '' : 'es'} · {int(row.maintenanceTasks.length)} tareas
+            </p>
+            <p className="mt-0.5 text-xs text-ds-muted">{plantStatusLabels[row.status] ?? row.status}</p>
           </div>
-        </div>
-        <div className="grid min-w-0 gap-2 sm:grid-cols-3 lg:min-w-[420px]">
-          <HeaderStat label="Equipos" value={summaryPlant?.equipmentCount ?? plant?.equipment.length ?? 0} />
-          <HeaderStat label="Plan" value={summaryPlant?.planTaskCount ?? plant?.planTasks.length ?? 0} />
-          <HeaderStat label="Cumplimiento" value={summary.data?.kpis.complianceRate === null || summary.data?.kpis.complianceRate === undefined ? '-' : `${PCT.format(summary.data.kpis.complianceRate)}%`} />
+          <Button onClick={() => setEditingTask('new')}>
+            <Plus className="size-4" />
+            Agregar tarea
+          </Button>
         </div>
       </header>
 
-      {detail.error instanceof ApiError && detail.error.status === 403 ? (
-        <PanelState title="Segundo factor requerido" detail="Completa 2FA para consultar esta planta." tone="danger" />
-      ) : detail.isError || summary.isError ? (
-        <PanelState title="No se pudo cargar la planta" detail="Revisa sesión, permisos o disponibilidad del API." tone="danger" />
-      ) : detail.isLoading || summary.isLoading ? (
-        <LoadingLayout />
-      ) : (
-        <Tabs defaultValue="resumen" className="flex flex-col gap-4">
-          <TabsList className="h-auto w-full justify-start overflow-x-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-1">
-            <TabsTrigger value="resumen">Resumen</TabsTrigger>
-            <TabsTrigger value="plan">Plan y equipos</TabsTrigger>
-            <TabsTrigger value="ejecuciones">Ejecuciones</TabsTrigger>
-            <TabsTrigger value="evidencias">Evidencias</TabsTrigger>
-            <TabsTrigger value="historico">Histórico</TabsTrigger>
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <Metric title="Tareas" value={int(row.kpis.maintenanceTaskCount)} icon={<ClipboardList className="size-4" />} />
+        <Metric title="HH base" value={fmtHh(row.kpis.hhBase)} icon={<Pencil className="size-4" />} />
+        <Metric title="Pendientes" value={int((status.PENDING ?? 0) + (status.OVERDUE ?? 0))} icon={<CalendarClock className="size-4" />} />
+        <Metric title="Completadas" value={int(status.DONE ?? 0)} icon={<CheckCircle2 className="size-4" />} />
+        <Metric title="Omitidas" value={int(status.SKIPPED ?? 0)} icon={<SkipForward className="size-4" />} />
+      </section>
+
+      <Tabs defaultValue="tareas">
+        <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+          <TabsList className="w-max sm:w-auto">
+            <TabsTrigger value="resumen" className="min-h-[40px]">Resumen</TabsTrigger>
+            <TabsTrigger value="tareas" className="min-h-[40px]">Tareas</TabsTrigger>
+            <TabsTrigger value="cronograma" className="min-h-[40px]">Cronograma</TabsTrigger>
+            <TabsTrigger value="ajustes" className="min-h-[40px]">Ajustes</TabsTrigger>
           </TabsList>
-
-          <TabsContent value="resumen" className="m-0">
-            <SummaryTab summary={summary.data} historyRows={summary.data?.recentChanges ?? []} />
-          </TabsContent>
-
-          <TabsContent value="plan" className="m-0">
-            {plant && <PlanAndEquipmentTab psr={psr} plant={plant} canWrite={canWrite} />}
-          </TabsContent>
-
-          <TabsContent value="ejecuciones" className="m-0">
-            <ExecutionPanel psr={psr} canWrite={canWrite} />
-          </TabsContent>
-
-          <TabsContent value="evidencias" className="m-0">
-            <EvidenceTab executions={executions.data?.rows ?? []} loading={executions.isLoading} error={executions.error} />
-          </TabsContent>
-
-          <TabsContent value="historico" className="m-0">
-            <HistoryTimeline rows={history.data ?? []} loading={history.isLoading} error={history.error} />
-          </TabsContent>
-        </Tabs>
-      )}
-    </div>
-  );
-}
-
-function HeaderStat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
-      <p className="text-[10px] uppercase tracking-[0.12em] text-ds-muted">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-text tabular-nums">{value}</p>
-    </div>
-  );
-}
-
-function SummaryTab({ summary, historyRows }: { summary?: PlantSummary; historyRows: AuditRow[] }) {
-  if (!summary) return null;
-  return (
-    <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-      <div className="flex flex-col gap-4">
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <KpiCard title="Vencidas" value={summary.kpis.overdue} tone={summary.kpis.overdue > 0 ? 'danger' : 'neutral'} icon={<AlertTriangle data-icon="inline-start" />} />
-          <KpiCard title="Próximos 30d" value={summary.kpis.next30} tone="brand" icon={<CalendarClock data-icon="inline-start" />} />
-          <KpiCard title="Pendientes revisión" value={summary.kpis.pendingReview} tone={summary.kpis.pendingReview > 0 ? 'warn' : 'neutral'} icon={<ClipboardList data-icon="inline-start" />} />
-          <KpiCard title="Sin evidencia" value={summary.kpis.missingEvidence} tone={summary.kpis.missingEvidence > 0 ? 'warn' : 'neutral'} icon={<Paperclip data-icon="inline-start" />} />
-        </section>
-
-        <section className="grid gap-3 md:grid-cols-3">
-          <MetricBand label="HH plan base" value={HH.format(summary.kpis.hhPlan)} />
-          <MetricBand label="HH real capturada" value={HH.format(summary.kpis.hhActual)} />
-          <MetricBand label="Cumplimiento" value={summary.kpis.complianceRate === null ? '-' : `${PCT.format(summary.kpis.complianceRate)}%`} />
-        </section>
-
-        <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-text">Ventana operacional</h2>
-              <p className="text-sm text-ds-muted">Próximas ejecuciones abiertas de la planta.</p>
-            </div>
-            <Badge variant="outline">{summary.upcoming.length} abiertas</Badge>
-          </div>
-          <div className="mt-4 flex flex-col gap-2">
-            {summary.upcoming.length === 0 ? (
-              <p className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm text-ds-muted">
-                Sin ejecuciones abiertas en la ventana de 30 días.
-              </p>
-            ) : (
-              summary.upcoming.map((execution) => (
-                <div key={execution.id} className="flex flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-text">{execution.planTask.description}</p>
-                    <p className="mt-1 text-xs text-ds-muted">
-                      {execution.planTask.equipment?.name ?? 'Sin equipo'} · {DATE.format(new Date(execution.dueDate))}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <Badge variant="outline">ABC {execution.planTask.abc ?? '-'}</Badge>
-                    <Badge variant="outline">{STATUS_LABELS[execution.status]}</Badge>
-                    <span className="text-sm font-semibold text-text tabular-nums">{HH.format(execution.hhPlan)} HH</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
-      </div>
-
-      <div className="flex flex-col gap-4">
-        <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-          <h2 className="text-base font-semibold text-text">Última evidencia</h2>
-          {summary.lastEvidence ? (
-            <a
-              href={`${API_URL}/api/evidencias/${summary.lastEvidence.id}`}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-3 flex items-start gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 transition-colors hover:border-ds-accent/50"
-            >
-              {iconForMime(summary.lastEvidence.mime)}
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-text">{summary.lastEvidence.originalName ?? 'Evidencia'}</span>
-                <span className="mt-1 block text-xs text-ds-muted">
-                  {summary.lastEvidence.planTask.description} · {DATETIME.format(new Date(summary.lastEvidence.uploadedAt))}
-                </span>
-              </span>
-              <ExternalLink data-icon="inline-start" />
-            </a>
-          ) : (
-            <p className="mt-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm text-ds-muted">
-              Sin evidencia cargada.
-            </p>
-          )}
-        </section>
-
-        <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-          <div className="flex items-center gap-2">
-            <History data-icon="inline-start" />
-            <h2 className="text-base font-semibold text-text">Últimos cambios</h2>
-          </div>
-          <HistoryTimeline rows={historyRows} compact />
-        </section>
-      </div>
-    </div>
-  );
-}
-
-function PlanAndEquipmentTab({ psr, plant, canWrite }: { psr: string; plant: PlantDetail; canWrite: boolean }) {
-  const queryClient = useQueryClient();
-  const [equipmentForm, setEquipmentForm] = useState({ type: 'OTHER' as EquipmentType, name: '', model: '', serial: '', notes: '' });
-  const [taskForm, setTaskForm] = useState({
-    equipmentId: '',
-    abc: 'B',
-    description: '',
-    frequency: 'MONTHLY' as PlanFrequency,
-    hhPlan: '1',
-  });
-
-  function refresh() {
-    queryClient.invalidateQueries({ queryKey: ['plant-detail', psr] });
-    queryClient.invalidateQueries({ queryKey: ['plant-summary', psr] });
-    queryClient.invalidateQueries({ queryKey: ['plants-operational'] });
-  }
-
-  const createEquipment = useMutation({
-    mutationFn: () => api(`/api/plantas/${encodeURIComponent(psr)}/equipos`, { method: 'POST', body: JSON.stringify(equipmentForm) }),
-    onSuccess: () => {
-      setEquipmentForm({ type: 'OTHER', name: '', model: '', serial: '', notes: '' });
-      refresh();
-    },
-  });
-
-  const createTask = useMutation({
-    mutationFn: () =>
-      api(`/api/plantas/${encodeURIComponent(psr)}/plan`, {
-        method: 'POST',
-        body: JSON.stringify({
-          ...taskForm,
-          equipmentId: taskForm.equipmentId || undefined,
-          hhPlan: Number(taskForm.hhPlan),
-        }),
-      }),
-    onSuccess: () => {
-      setTaskForm({ equipmentId: '', abc: 'B', description: '', frequency: 'MONTHLY', hhPlan: '1' });
-      refresh();
-    },
-  });
-
-  const generate = useMutation({
-    mutationFn: (taskId: string) => api(`/api/tareas-programadas/${taskId}/generar-ejecuciones`, { method: 'POST', body: JSON.stringify({ months: 12 }) }),
-    onSuccess: refresh,
-  });
-
-  return (
-    <div className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
-      <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-text">Equipos</h2>
-            <p className="text-sm text-ds-muted">{plant.equipment.length} activos</p>
-          </div>
-          <Wrench data-icon="inline-start" />
         </div>
 
-        {canWrite && (
-          <form
-            className="mt-4 flex flex-col gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3"
-            onSubmit={(event: FormEvent) => {
-              event.preventDefault();
-              createEquipment.mutate();
-            }}
-          >
-            <div className="grid gap-3 sm:grid-cols-[150px_1fr]">
-              <Field label="Tipo">
-                <select
-                  value={equipmentForm.type}
-                  onChange={(event) => setEquipmentForm((current) => ({ ...current, type: event.target.value as EquipmentType }))}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  {Object.entries(EQUIPMENT_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Nombre">
-                <Input value={equipmentForm.name} onChange={(event) => setEquipmentForm((current) => ({ ...current, name: event.target.value }))} required placeholder="Bomba P-201" />
-              </Field>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Modelo">
-                <Input value={equipmentForm.model} onChange={(event) => setEquipmentForm((current) => ({ ...current, model: event.target.value }))} placeholder="Opcional" />
-              </Field>
-              <Field label="Serial">
-                <Input value={equipmentForm.serial} onChange={(event) => setEquipmentForm((current) => ({ ...current, serial: event.target.value }))} placeholder="Opcional" />
-              </Field>
-            </div>
-            <Field label="Notas">
-              <Input value={equipmentForm.notes} onChange={(event) => setEquipmentForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Ubicación o condición" />
-            </Field>
-            <div className="flex justify-end">
-              <Button type="submit" disabled={createEquipment.isPending}>
-                <Plus data-icon="inline-start" />
-                Agregar equipo
-              </Button>
-            </div>
-            {createEquipment.isError && <ErrorText error={createEquipment.error} />}
-          </form>
-        )}
-
-        <div className="mt-4 flex flex-col gap-2">
-          {plant.equipment.length === 0 ? (
-            <EmptyMini text="Sin equipos asociados." />
-          ) : (
-            plant.equipment.map((item) => (
-              <div key={item.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-text">{item.name}</p>
-                    <p className="mt-1 text-xs text-ds-muted">
-                      {EQUIPMENT_LABELS[item.type]} {item.model ? `· ${item.model}` : ''} {item.serial ? `· ${item.serial}` : ''}
-                    </p>
-                  </div>
-                  <Badge variant="outline">{EQUIPMENT_LABELS[item.type]}</Badge>
-                </div>
-                {item.notes && <p className="mt-2 text-xs text-ds-muted">{item.notes}</p>}
+        <TabsContent value="resumen" className="mt-4">
+          <div className="mb-4">
+            <PlantCalendarHeatmap
+              executions={row.maintenanceTasks.flatMap((t) =>
+                t.executions.map((e) => ({
+                  id: e.id,
+                  dueDate: e.dueDate,
+                  status: e.status,
+                  hhPlanned: e.hhPlanned,
+                })),
+              )}
+            />
+          </div>
+          <section className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+            <article className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+              <h2 className="font-semibold text-text">Frecuencias</h2>
+              <div className="mt-3 grid gap-2">
+                {FREQUENCIES.map((freq) => {
+                  const count = row.maintenanceTasks.filter((task) => task.frecuenciaCodigo === freq.code).length;
+                  return <StatLine key={freq.code} label={freq.label} value={`${int(count)} tareas`} />;
+                })}
               </div>
-            ))
-          )}
-        </div>
-      </section>
-
-      <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-text">Plan de mantención</h2>
-            <p className="text-sm text-ds-muted">{plant.planTasks.length} tareas activas</p>
-          </div>
-          <ClipboardList data-icon="inline-start" />
-        </div>
-
-        {canWrite && (
-          <form
-            className="mt-4 flex flex-col gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3"
-            onSubmit={(event: FormEvent) => {
-              event.preventDefault();
-              createTask.mutate();
-            }}
-          >
-            <div className="grid gap-3 md:grid-cols-[90px_1fr_150px_110px]">
-              <Field label="ABC">
-                <select value={taskForm.abc} onChange={(event) => setTaskForm((current) => ({ ...current, abc: event.target.value }))} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="A">A</option>
-                  <option value="B">B</option>
-                  <option value="C">C</option>
-                </select>
-              </Field>
-              <Field label="Descripción">
-                <Input value={taskForm.description} onChange={(event) => setTaskForm((current) => ({ ...current, description: event.target.value }))} required placeholder="Cambio sello mecánico" />
-              </Field>
-              <Field label="Frecuencia">
-                <select
-                  value={taskForm.frequency}
-                  onChange={(event) => setTaskForm((current) => ({ ...current, frequency: event.target.value as PlanFrequency }))}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  {Object.entries(FREQUENCY_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="HH plan">
-                <Input type="number" min="0" step="0.1" value={taskForm.hhPlan} onChange={(event) => setTaskForm((current) => ({ ...current, hhPlan: event.target.value }))} required />
-              </Field>
-            </div>
-            <Field label="Equipo">
-              <select value={taskForm.equipmentId} onChange={(event) => setTaskForm((current) => ({ ...current, equipmentId: event.target.value }))} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                <option value="">Sin equipo específico</option>
-                {plant.equipment.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <div className="flex justify-end">
-              <Button type="submit" disabled={createTask.isPending}>
-                <Plus data-icon="inline-start" />
-                Agregar tarea
-              </Button>
-            </div>
-            {createTask.isError && <ErrorText error={createTask.error} />}
-          </form>
-        )}
-
-        <div className="mt-4 flex flex-col gap-2">
-          {plant.planTasks.length === 0 ? (
-            <EmptyMini text="Sin tareas de mantención." />
-          ) : (
-            plant.planTasks.map((task) => (
-              <div key={task.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="outline">ABC {task.abc ?? '-'}</Badge>
-                      <Badge variant="outline">{FREQUENCY_LABELS[task.frequency]}</Badge>
-                      <span className="text-sm font-semibold text-text tabular-nums">{HH.format(Number(task.hhPlan))} HH</span>
+            </article>
+            <article className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+              <h2 className="font-semibold text-text">Próximas actividades</h2>
+              <div className="mt-3 grid gap-2">
+                {upcoming.slice(0, 6).map((execution) => (
+                  <div key={execution.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="truncate text-sm font-medium text-text">{execution.task.descPosicionMant ?? 'Sin descripción'}</p>
+                      <ExecutionBadge status={execution.status} />
                     </div>
-                    <p className="mt-2 text-sm font-medium text-text">{task.description}</p>
-                    <p className="mt-1 text-xs text-ds-muted">{task.equipment?.name ?? 'Sin equipo específico'}</p>
+                    <p className="mt-1 text-xs text-ds-muted">{DATE.format(new Date(execution.dueDate))} · {labelFrequency(execution.task.frecuenciaCodigo)}</p>
                   </div>
-                  {canWrite && task.frequency !== 'CUSTOM' && (
-                    <Button type="button" size="sm" variant="outline" disabled={generate.isPending} onClick={() => generate.mutate(task.id)}>
-                      <CalendarClock data-icon="inline-start" />
-                      Generar 12m
-                    </Button>
-                  )}
-                </div>
+                ))}
               </div>
-            ))
-          )}
-        </div>
-        {generate.isError && <div className="mt-3"><ErrorText error={generate.error} /></div>}
-      </section>
-    </div>
-  );
-}
+            </article>
+          </section>
+        </TabsContent>
 
-function EvidenceTab({ executions, loading, error }: { executions: ExecutionRow[]; loading: boolean; error: unknown }) {
-  const [kind, setKind] = useState<'all' | 'image' | 'pdf' | 'video' | 'other'>('all');
-  const [q, setQ] = useState('');
-  const evidence = useMemo(
-    () =>
-      executions.flatMap((execution) =>
-        execution.evidence.map((item) => ({
-          ...item,
-          executionId: execution.id,
-          dueDate: execution.dueDate,
-          task: execution.planTask.description,
-          equipment: execution.planTask.equipment?.name ?? null,
-          abc: execution.planTask.abc,
-        })),
-      ),
-    [executions],
-  );
+        <TabsContent value="tareas" className="mt-4">
+          <section className="grid gap-3">
+            {row.maintenanceTasks.map((task) => (
+              <TaskCard key={task.id} task={task} onEdit={() => setEditingTask(task)} onDelete={() => setDeletingTask(task)} />
+            ))}
+          </section>
+        </TabsContent>
 
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return evidence.filter((item) => {
-      if (kind !== 'all' && mimeKind(item.mime) !== kind) return false;
-      if (!needle) return true;
-      return [item.originalName, item.filename, item.description, item.task, item.equipment, item.abc]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(needle));
-    });
-  }, [evidence, kind, q]);
+        <TabsContent value="cronograma" className="mt-4">
+          <section className="grid gap-3">
+            {upcoming.map((execution) => (
+              <ExecutionCard key={execution.id} execution={execution} onSaved={() => queryClient.invalidateQueries({ queryKey: ['plant-detail', psr] })} />
+            ))}
+            {upcoming.length === 0 && <PanelState title="Sin ejecuciones próximas" detail="Agrega tareas o revisa la frecuencia/mes de inicio." />}
+          </section>
+        </TabsContent>
 
-  if (error) return <ErrorPanel error={error} />;
-  if (loading) {
-    return (
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, index) => (
-          <Skeleton key={index} className="h-40 rounded-xl" />
-        ))}
-      </div>
-    );
-  }
+        <TabsContent value="ajustes" className="mt-4">
+          <PlantSettings plant={row} onSaved={() => queryClient.invalidateQueries({ queryKey: ['plant-detail', psr] })} />
+        </TabsContent>
+      </Tabs>
 
-  return (
-    <div className="flex flex-col gap-4">
-      <section className="flex flex-col gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 md:flex-row md:items-center">
-        <label className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ds-muted" />
-          <Input value={q} onChange={(event) => setQ(event.target.value)} placeholder="Buscar evidencia, equipo o tarea" className="pl-9" />
-        </label>
-        <div className="flex flex-wrap gap-2">
-          {(['all', 'image', 'pdf', 'video', 'other'] as const).map((value) => (
-            <FilterChip key={value} active={kind === value} onClick={() => setKind(value)}>
-              {value === 'all' ? 'Todas' : value === 'image' ? 'Imagen' : value === 'pdf' ? 'PDF' : value === 'video' ? 'Video' : 'Otros'}
-            </FilterChip>
-          ))}
-        </div>
-      </section>
-
-      {filtered.length === 0 ? (
-        <PanelState title="Sin evidencias" detail="No hay archivos activos para los filtros actuales." />
-      ) : (
-        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((item) => (
-            <a
-              key={item.id}
-              href={`${API_URL}/api/evidencias/${item.id}`}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-ds-accent/50"
-            >
-              <div className="flex items-start gap-3">
-                {iconForMime(item.mime)}
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-text">{item.originalName ?? item.filename}</p>
-                  <p className="mt-1 text-xs text-ds-muted">{item.task}</p>
-                </div>
-                <ExternalLink data-icon="inline-start" />
-              </div>
-              <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-ds-muted">
-                <Badge variant="outline">ABC {item.abc ?? '-'}</Badge>
-                <span>{item.equipment ?? 'Sin equipo'}</span>
-                <span>{DATE.format(new Date(item.uploadedAt))}</span>
-              </div>
-              {item.description && <p className="mt-3 line-clamp-2 text-sm text-ds-muted">{item.description}</p>}
-            </a>
-          ))}
-        </section>
+      {editingTask && (
+        <TaskEditor
+          plant={row}
+          task={editingTask === 'new' ? null : editingTask}
+          onClose={() => setEditingTask(null)}
+          onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ['plant-detail', psr] });
+            queryClient.invalidateQueries({ queryKey: ['plantas'] });
+            setEditingTask(null);
+          }}
+        />
+      )}
+      {deletingTask && (
+        <DeleteTaskDialog
+          task={deletingTask}
+          onClose={() => setDeletingTask(null)}
+          onDeleted={() => {
+            queryClient.invalidateQueries({ queryKey: ['plant-detail', psr] });
+            queryClient.invalidateQueries({ queryKey: ['plantas'] });
+            setDeletingTask(null);
+          }}
+        />
       )}
     </div>
   );
 }
 
-function HistoryTimeline({ rows, loading, error, compact = false }: { rows: AuditRow[]; loading?: boolean; error?: unknown; compact?: boolean }) {
-  if (error) return <ErrorPanel error={error} />;
-  if (loading) {
-    return (
-      <div className="mt-3 flex flex-col gap-2">
-        {Array.from({ length: compact ? 3 : 6 }).map((_, index) => (
-          <Skeleton key={index} className="h-16 rounded-lg" />
-        ))}
-      </div>
-    );
-  }
-  if (rows.length === 0) return <p className="mt-3 text-sm text-ds-muted">Sin eventos auditados asociados.</p>;
-
+function TaskCard({ task, onEdit, onDelete }: { task: TaskRow; onEdit: () => void; onDelete: () => void }) {
   return (
-    <div className={compact ? 'mt-3 flex flex-col gap-2' : 'flex flex-col gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4'}>
-      {rows.map((row) => (
-        <div key={row.id} className="flex gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
-          <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-accent-dim text-ds-accent">
-            <History data-icon="inline-start" />
+    <article className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="font-semibold text-text">{task.descPosicionMant ?? 'Sin descripción'}</h2>
+            <Badge variant="outline">{labelFrequency(task.frecuenciaCodigo)}</Badge>
+            {task.manualOverride && <Badge variant="outline">Manual</Badge>}
           </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm font-medium text-text">{ACTION_LABELS[row.action] ?? row.action}</p>
-              {row.entity && <Badge variant="outline">{row.entity}</Badge>}
-            </div>
-            <p className="mt-1 text-xs text-ds-muted">
-              {DATETIME.format(new Date(row.createdAt))} {row.user?.email ? `· ${row.user.email}` : ''}
-            </p>
-          </div>
+          <p className="mt-1 text-sm text-ds-muted">{task.denomUbicacionTecnica ?? 'Sin ubicación'} · {task.equipo ?? 'Sin equipo'}</p>
         </div>
-      ))}
-    </div>
-  );
-}
-
-function KpiCard({ title, value, icon, tone }: { title: string; value: string | number; icon: React.ReactNode; tone: 'brand' | 'warn' | 'danger' | 'neutral' }) {
-  const toneClass = {
-    brand: 'border-ds-accent/30 bg-accent-dim text-ds-accent',
-    warn: 'border-warn/30 bg-warn-dim text-warn',
-    danger: 'border-danger/30 bg-danger-dim text-danger',
-    neutral: 'border-[var(--color-border)] bg-[var(--color-surface)] text-text',
-  }[tone];
-  return (
-    <article className={`rounded-xl border p-4 ${toneClass}`}>
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] uppercase tracking-[0.14em] opacity-75">{title}</p>
-        {icon}
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={onEdit}><Pencil className="size-4" />Editar</Button>
+          <Button variant="outline" size="sm" onClick={onDelete}><Trash2 className="size-4" />Eliminar</Button>
+        </div>
       </div>
-      <p className="mt-3 text-2xl font-semibold tabular-nums">{value}</p>
+      <div className="mt-4 grid gap-2 sm:grid-cols-4">
+        <StatBox label="HH base" value={fmtHh(Number(task.hhReal ?? 0))} />
+        <StatBox label="Mes inicio" value={task.mesInicio ? String(task.mesInicio) : '—'} />
+        <StatBox label="Eventos" value={int(task.schedule.length)} />
+        <StatBox label="Próximas" value={int(task.executions.length)} />
+      </div>
     </article>
   );
 }
 
-function MetricBand({ label, value }: { label: string; value: string | number }) {
+function ExecutionCard({ execution, onSaved }: { execution: TaskRow['executions'][number] & { task: TaskRow }; onSaved: () => void }) {
+  const save = useMutation({
+    mutationFn: (status: ExecStatus) =>
+      api(`/api/schedule/executions/${execution.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      }),
+    onSuccess: onSaved,
+  });
   return (
-    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <p className="text-[11px] uppercase tracking-[0.14em] text-ds-muted">{label}</p>
-      <p className="mt-2 text-xl font-semibold text-text tabular-nums">{value}</p>
+    <article className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="font-medium text-text">{execution.task.descPosicionMant ?? 'Sin descripción'}</p>
+          <p className="mt-1 text-sm text-ds-muted">{DATE.format(new Date(execution.dueDate))} · {labelFrequency(execution.task.frecuenciaCodigo)} · {fmtHh(Number(execution.hhPlanned))} HH</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <ExecutionBadge status={execution.status} />
+          <Button variant="outline" size="sm" onClick={() => save.mutate('DONE')} disabled={save.isPending}>Completar</Button>
+          <Button variant="outline" size="sm" onClick={() => save.mutate('SKIPPED')} disabled={save.isPending}>Omitir</Button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function TaskEditor({ plant, task, onClose, onSaved }: { plant: PlantDetail; task: TaskRow | null; onClose: () => void; onSaved: () => void }) {
+  const [description, setDescription] = useState(task?.descPosicionMant ?? '');
+  const [location, setLocation] = useState(task?.denomUbicacionTecnica ?? '');
+  const [equipment, setEquipment] = useState(task?.equipo ?? '');
+  const [frequency, setFrequency] = useState(task?.frecuenciaCodigo ?? '1A');
+  const [startMonth, setStartMonth] = useState(String(task?.mesInicio ?? 1));
+  const [hh, setHh] = useState(String(task?.hhReal ?? 0));
+  const selected = FREQUENCIES.find((item) => item.code === frequency) ?? FREQUENCIES[2];
+  const save = useMutation({
+    mutationFn: () =>
+      api(task ? `/api/tasks/${task.id}` : '/api/tasks', {
+        method: task ? 'PATCH' : 'POST',
+        body: JSON.stringify({
+          plantId: plant.id,
+          descPosicionMant: description,
+          denomUbicacionTecnica: location || plant.name,
+          ubicacionTecnica: location || plant.name,
+          equipo: equipment,
+          denomObjetoTecnico: equipment,
+          frecuenciaCodigo: frequency,
+          frecuenciaMeses: selected?.months ?? 12,
+          mesInicio: Number(startMonth),
+          hhReal: Number(hh),
+        }),
+      }),
+    onSuccess: onSaved,
+  });
+  return (
+    <Modal title={task ? 'Editar tarea' : 'Agregar tarea'} onClose={onClose}>
+      <form className="grid gap-3" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
+        <Field label="Descripción"><Input value={description} onChange={(event) => setDescription(event.target.value)} required /></Field>
+        <Field label="Ubicación"><Input value={location} onChange={(event) => setLocation(event.target.value)} placeholder={plant.name} /></Field>
+        <Field label="Equipo"><Input value={equipment} onChange={(event) => setEquipment(event.target.value)} /></Field>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Field label="Frecuencia">
+            <select value={frequency} onChange={(event) => setFrequency(event.target.value)} className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-text">
+              {FREQUENCIES.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Mes inicio"><Input type="number" min={1} max={12} value={startMonth} onChange={(event) => setStartMonth(event.target.value)} /></Field>
+          <Field label="HH base"><Input type="number" min={0} step="0.1" value={hh} onChange={(event) => setHh(event.target.value)} /></Field>
+        </div>
+        {save.isError && <p className="text-sm text-danger">No se pudo guardar la tarea.</p>}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button type="submit" disabled={save.isPending}>{save.isPending ? 'Guardando...' : 'Guardar'}</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function DeleteTaskDialog({ task, onClose, onDeleted }: { task: TaskRow; onClose: () => void; onDeleted: () => void }) {
+  const [confirmation, setConfirmation] = useState('');
+  const remove = useMutation({
+    mutationFn: () =>
+      api(`/api/tasks/${task.id}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ confirmation }),
+      }),
+    onSuccess: onDeleted,
+  });
+  return (
+    <Modal title="Eliminar tarea" onClose={onClose}>
+      <form className="grid gap-3" onSubmit={(event) => { event.preventDefault(); remove.mutate(); }}>
+        <p className="text-sm text-ds-muted">La tarea se desactivará y quedará recuperable en auditoría. Escribe <strong className="text-text">ELIMINAR</strong> para confirmar.</p>
+        <Input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="ELIMINAR" />
+        {remove.isError && <p className="text-sm text-danger">Confirmación inválida o sin permisos.</p>}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button type="submit" disabled={confirmation !== 'ELIMINAR' || remove.isPending}>Eliminar</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function PlantSettings({ plant, onSaved }: { plant: PlantDetail; onSaved: () => void }) {
+  const [name, setName] = useState(plant.name);
+  const [status, setStatus] = useState<PlantStatus>(plant.status);
+  const [aliases, setAliases] = useState(plant.aliases.map((item) => item.alias).join('\n'));
+  const save = useMutation({
+    mutationFn: () =>
+      api(`/api/plantas/${plant.psr}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name, status, aliases: aliases.split('\n').map((item) => item.trim()).filter(Boolean) }),
+      }),
+    onSuccess: onSaved,
+  });
+  return (
+    <form className="grid gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4" onSubmit={(event: FormEvent) => { event.preventDefault(); save.mutate(); }}>
+      <Field label="Nombre visible"><Input value={name} onChange={(event) => setName(event.target.value)} /></Field>
+      <Field label="Estado">
+        <select value={status} onChange={(event) => setStatus(event.target.value as PlantStatus)} className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-text">
+          <option value="ACTIVE">Activa</option>
+          <option value="STANDBY">Standby</option>
+          <option value="INACTIVE">Inactiva</option>
+        </select>
+      </Field>
+      <Field label="Aliases">
+        <textarea value={aliases} onChange={(event) => setAliases(event.target.value)} rows={7} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-text" />
+      </Field>
+      <div><Button type="submit" disabled={save.isPending}>{save.isPending ? 'Guardando...' : 'Guardar ajustes'}</Button></div>
+    </form>
+  );
+}
+
+function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-4 py-6">
+      <section className="w-full max-w-2xl rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xl">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-text">{title}</h2>
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>Cerrar</Button>
+        </div>
+        {children}
+      </section>
     </div>
   );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium text-ds-muted">{label}</span>
-      {children}
-    </label>
-  );
+  return <label className="grid gap-1 text-sm text-ds-muted">{label}{children}</label>;
 }
 
-function FilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`h-9 rounded-full border px-3 text-sm transition-colors ${
-        active
-          ? 'border-ds-accent bg-accent-dim text-ds-accent'
-          : 'border-[var(--color-border)] bg-[var(--color-surface)] text-ds-muted hover:text-text'
-      }`}
-    >
-      {children}
-    </button>
-  );
+function Metric({ title, value, icon }: { title: string; value: string; icon: React.ReactNode }) {
+  return <article className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4"><div className="flex items-center justify-between gap-2 text-ds-muted"><p className="text-[11px] uppercase tracking-[0.18em]">{title}</p>{icon}</div><p className="mt-4 text-2xl font-semibold text-text tabular-nums">{value}</p></article>;
 }
 
-function EmptyMini({ text }: { text: string }) {
-  return <p className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm text-ds-muted">{text}</p>;
+function StatBox({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2"><p className="text-xs text-ds-muted">{label}</p><p className="mt-1 font-semibold text-text tabular-nums">{value}</p></div>;
 }
 
-function PanelState({ title, detail, tone = 'normal' }: { title: string; detail: string; tone?: 'normal' | 'danger' }) {
-  return (
-    <section className={`rounded-xl border p-8 text-center ${tone === 'danger' ? 'border-danger/30 bg-danger-dim' : 'border-[var(--color-border)] bg-[var(--color-surface)]'}`}>
-      <h2 className="text-base font-semibold text-text">{title}</h2>
-      <p className="mx-auto mt-2 max-w-xl text-sm text-ds-muted">{detail}</p>
-    </section>
-  );
+function StatLine({ label, value }: { label: string; value: string }) {
+  return <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm"><span className="font-medium text-text">{label}</span><span className="text-ds-muted">{value}</span></div>;
 }
 
-function LoadingLayout() {
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="grid gap-3 sm:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <Skeleton key={index} className="h-28 rounded-xl" />
-        ))}
-      </div>
-      <Skeleton className="h-96 rounded-xl" />
-    </div>
-  );
+function PanelState({ title, detail }: { title: string; detail: string }) {
+  return <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center"><h2 className="font-semibold text-text">{title}</h2><p className="mt-2 text-sm text-ds-muted">{detail}</p></section>;
 }
 
-function ErrorPanel({ error }: { error: unknown }) {
-  return <PanelState title="No se pudo cargar" detail={messageFromError(error)} tone="danger" />;
+function StatusBadge({ status }: { status: PlantStatus }) {
+  const label = status === 'ACTIVE' ? 'Activa' : status === 'STANDBY' ? 'Standby' : 'Inactiva';
+  return <Badge variant="outline">{label}</Badge>;
 }
 
-function ErrorText({ error }: { error: unknown }) {
-  return (
-    <p role="alert" className="rounded-md border border-danger/30 bg-danger-dim px-3 py-2 text-sm text-danger">
-      {messageFromError(error)}
-    </p>
-  );
+function ExecutionBadge({ status }: { status: ExecStatus }) {
+  const label = status === 'DONE' ? 'Completada' : status === 'SKIPPED' ? 'Omitida' : status === 'OVERDUE' ? 'Vencida' : 'Pendiente';
+  return <Badge variant="outline">{label}</Badge>;
 }
 
-function messageFromError(error: unknown) {
-  if (error instanceof ApiError && typeof error.body === 'object' && error.body && 'message' in error.body) {
-    return String((error.body as { message?: unknown }).message);
-  }
-  return 'No se pudo completar la acción.';
+function statusMap(rows: PlantDetail['kpis']['statusCounts']) {
+  return Object.fromEntries(rows.map((row) => [row.status, row.count])) as Partial<Record<ExecStatus, number>>;
 }
 
-function mimeKind(mime: string): 'image' | 'pdf' | 'video' | 'other' {
-  if (mime.startsWith('image/')) return 'image';
-  if (mime === 'application/pdf') return 'pdf';
-  if (mime.startsWith('video/')) return 'video';
-  return 'other';
-}
-
-function iconForMime(mime: string) {
-  const kind = mimeKind(mime);
-  const className = 'mt-0.5 shrink-0 text-ds-accent';
-  if (kind === 'image') return <FileImage data-icon="inline-start" className={className} />;
-  if (kind === 'pdf') return <FileText data-icon="inline-start" className={className} />;
-  if (kind === 'video') return <Video data-icon="inline-start" className={className} />;
-  return <FileArchive data-icon="inline-start" className={className} />;
+function labelFrequency(value: string | null) {
+  if (value === '1M') return 'Mensual';
+  if (value === '6M') return 'Semestral';
+  if (value === '1A') return 'Anual';
+  if (value === '5A') return 'Quinquenal';
+  return value ?? 'Sin frecuencia';
 }

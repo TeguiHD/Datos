@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { ShieldCheck, ShieldAlert } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { KpiCard } from '../_components/KpiCard';
@@ -34,6 +34,11 @@ interface AuditVerify {
   brokenAt?: string;
 }
 
+interface AuditPage {
+  items: AuditRow[];
+  nextCursor: string | null;
+}
+
 const ACTIONS = [
   '',
   'AI_INSIGHT',
@@ -50,17 +55,27 @@ export default function AuditoriaPage() {
   const [action, setAction] = useState('');
   const [take, setTake] = useState(100);
 
-  const params = useMemo(() => {
+  const baseParams = useMemo(() => {
     const p = new URLSearchParams();
     p.set('take', String(take));
     if (action) p.set('action', action);
-    return p.toString();
+    return p;
   }, [action, take]);
 
-  const auditQuery = useQuery({
-    queryKey: ['audit', params],
-    queryFn: () => api<AuditRow[]>(`/api/audit?${params}`),
+  const auditQuery = useInfiniteQuery({
+    queryKey: ['audit', baseParams.toString()],
+    queryFn: ({ pageParam }: { pageParam?: string }) => {
+      const p = new URLSearchParams(baseParams);
+      if (pageParam) p.set('cursor', pageParam);
+      return api<AuditPage>(`/api/audit?${p.toString()}`);
+    },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
+  const auditItems = useMemo(
+    () => auditQuery.data?.pages.flatMap((p) => p.items) ?? [],
+    [auditQuery.data],
+  );
   const verifyQuery = useQuery({
     queryKey: ['audit-verify'],
     queryFn: () => api<AuditVerify>('/api/audit/verify'),
@@ -116,7 +131,7 @@ export default function AuditoriaPage() {
           loading={verifyQuery.isLoading}
         />
         <KpiCard title="Eventos verificados" value={verifyQuery.data?.count != null ? NUMBER_FORMAT.format(verifyQuery.data.count) : '—'} tone="accent" loading={verifyQuery.isLoading} />
-        <KpiCard title="Eventos listados" value={auditQuery.data ? NUMBER_FORMAT.format(auditQuery.data.length) : '—'} loading={auditQuery.isLoading} />
+        <KpiCard title="Eventos listados" value={auditQuery.data ? NUMBER_FORMAT.format(auditItems.length) : '—'} loading={auditQuery.isLoading} />
       </div>
 
       {verifyQuery.data && !verifyQuery.data.ok && (
@@ -156,10 +171,10 @@ export default function AuditoriaPage() {
               {auditQuery.isLoading && (
                 <tr><td colSpan={6} className="px-3 py-8 text-center text-ds-muted">Cargando…</td></tr>
               )}
-              {!auditQuery.isLoading && !auditQuery.isError && auditQuery.data?.length === 0 && (
+              {!auditQuery.isLoading && !auditQuery.isError && auditItems.length === 0 && (
                 <tr><td colSpan={6} className="px-3 py-8 text-center text-ds-muted">Sin eventos para el filtro seleccionado.</td></tr>
               )}
-              {!auditQuery.isLoading && !auditQuery.isError && auditQuery.data?.map((row) => (
+              {!auditQuery.isLoading && !auditQuery.isError && auditItems.map((row) => (
                 <tr key={row.id} className="border-t border-[var(--color-border)] hover:bg-accent-dim/40">
                   <td className="whitespace-nowrap px-3 py-2">{DATE_FORMAT.format(new Date(row.createdAt))}</td>
                   <td className="px-3 py-2 font-medium text-text">{row.action}</td>
@@ -172,6 +187,18 @@ export default function AuditoriaPage() {
             </tbody>
           </table>
         </div>
+        {auditQuery.hasNextPage && (
+          <div className="border-t border-[var(--color-border)] p-3 text-center">
+            <button
+              type="button"
+              onClick={() => auditQuery.fetchNextPage()}
+              disabled={auditQuery.isFetchingNextPage}
+              className="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm font-medium hover:bg-[var(--color-surface-2)] disabled:opacity-50 min-h-[40px]"
+            >
+              {auditQuery.isFetchingNextPage ? 'Cargando…' : 'Cargar más'}
+            </button>
+          </div>
+        )}
       </section>
     </div>
   );
