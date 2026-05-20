@@ -6,6 +6,7 @@ export const SCOPES = [
   'FREQ',
   'FREQ_ABC',
   'PLANT',
+  'PLANT_ABC',
   'PLANT_FREQ',
   'PLANT_FREQ_ABC',
 ] as const;

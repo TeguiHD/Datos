@@ -37,7 +37,7 @@ export default function EstadisticasPage() {
         </p>
       </header>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <section className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-3 xl:grid-cols-5">
         <Metric title="Plantas" value={NUMBER.format(data?.plantCount ?? 0)} icon={<Factory className="size-4" />} />
         <Metric title="Tareas" value={NUMBER.format(data?.taskCount ?? 0)} icon={<BarChart3 className="size-4" />} />
         <Metric title="Pendientes" value={NUMBER.format((data?.pendingCount ?? 0) + (data?.overdueCount ?? 0))} icon={<Clock className="size-4" />} />
@@ -94,12 +94,12 @@ export default function EstadisticasPage() {
 
 function Metric({ title, value, icon }: { title: string; value: string; icon: React.ReactNode }) {
   return (
-    <article className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+    <article className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 sm:p-4">
       <div className="flex items-center justify-between gap-2 text-ds-muted">
-        <p className="text-[11px] uppercase tracking-[0.18em]">{title}</p>
+        <p className="text-[10px] uppercase tracking-[0.16em] sm:text-[11px] sm:tracking-[0.18em]">{title}</p>
         {icon}
       </div>
-      <p className="mt-4 text-2xl font-semibold text-text tabular-nums">{value}</p>
+      <p className="mt-2 text-xl font-semibold text-text tabular-nums sm:mt-4 sm:text-2xl">{value}</p>
     </article>
   );
 }

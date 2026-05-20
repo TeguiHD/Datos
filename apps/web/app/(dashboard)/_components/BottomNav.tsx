@@ -1,51 +1,65 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { CalendarClock, ClipboardList, Factory, Layers, Sun } from 'lucide-react';
+import { CalendarClock, Factory, ListTodo, Menu, Sun } from 'lucide-react';
+import { MoreSheet } from './MoreSheet';
 
-type Item = {
-  href: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  match: (pathname: string) => boolean;
-};
-
-const ITEMS: Item[] = [
-  { href: '/dashboard/hoy', label: 'Hoy', icon: Sun, match: (p) => p.startsWith('/dashboard/hoy') },
-  { href: '/dashboard/semana', label: 'Semana', icon: CalendarClock, match: (p) => p.startsWith('/dashboard/semana') },
-  { href: '/dashboard/tareas', label: 'Tareas', icon: ClipboardList, match: (p) => p.startsWith('/dashboard/tareas') },
-  { href: '/dashboard/plantas', label: 'Plantas', icon: Factory, match: (p) => p.startsWith('/dashboard/plantas') },
-  { href: '/dashboard', label: 'Más', icon: Layers, match: (p) => p === '/dashboard' || p.startsWith('/dashboard/analytics') || p.startsWith('/dashboard/admin') || p.startsWith('/dashboard/auditoria') },
+const TABS = [
+  { href: '/dashboard/hoy', label: 'Hoy', icon: Sun },
+  { href: '/dashboard/semana', label: 'Semana', icon: CalendarClock },
+  { href: '/dashboard/tareas', label: 'Tareas', icon: ListTodo },
+  { href: '/dashboard/plantas', label: 'Plantas', icon: Factory },
 ];
 
 export function BottomNav() {
   const pathname = usePathname();
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  const onMainTab = TABS.some((t) => pathname === t.href || pathname.startsWith(`${t.href}/`));
+
   return (
-    <nav
-      aria-label="Navegación inferior"
-      className="md:hidden fixed inset-x-0 bottom-0 z-40 border-t border-[var(--color-border)] bg-[var(--color-surface)] pb-[env(safe-area-inset-bottom,0)]"
-    >
-      <ul className="grid grid-cols-5">
-        {ITEMS.map((item) => {
-          const active = item.match(pathname);
-          const Icon = item.icon;
-          return (
-            <li key={item.href}>
-              <Link
-                href={item.href}
-                aria-current={active ? 'page' : undefined}
-                className={`flex min-h-[56px] flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-[11px] font-medium transition-colors ${
-                  active ? 'text-ds-accent' : 'text-ds-muted hover:text-text'
-                }`}
-              >
-                <Icon className="size-5" aria-hidden />
-                <span>{item.label}</span>
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
+    <>
+      <nav
+        aria-label="Navegación"
+        className="md:hidden fixed inset-x-0 bottom-0 z-40 border-t border-[var(--color-border)] bg-[var(--color-surface)] pb-[env(safe-area-inset-bottom,0)]"
+      >
+        <ul className="grid grid-cols-5">
+          {TABS.map((tab) => {
+            const active = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
+            const Icon = tab.icon;
+            return (
+              <li key={tab.href}>
+                <Link
+                  href={tab.href}
+                  aria-current={active ? 'page' : undefined}
+                  className={`flex min-h-[56px] flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-[11px] font-medium transition-colors ${
+                    active ? 'text-ds-accent' : 'text-ds-muted hover:text-text'
+                  }`}
+                >
+                  <Icon className="size-5" aria-hidden />
+                  <span>{tab.label}</span>
+                </Link>
+              </li>
+            );
+          })}
+          <li>
+            <button
+              type="button"
+              onClick={() => setMoreOpen(true)}
+              aria-haspopup="dialog"
+              className={`flex min-h-[56px] w-full flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-[11px] font-medium transition-colors ${
+                !onMainTab ? 'text-ds-accent' : 'text-ds-muted hover:text-text'
+              }`}
+            >
+              <Menu className="size-5" aria-hidden />
+              <span>Más</span>
+            </button>
+          </li>
+        </ul>
+      </nav>
+      <MoreSheet open={moreOpen} onOpenChange={setMoreOpen} />
+    </>
   );
 }

@@ -34,7 +34,7 @@ export function ForecastStrip() {
         <h2 className="font-semibold text-text">Carga prevista</h2>
         <p className="text-xs text-ds-muted">Próximos días</p>
       </div>
-      <ul className="grid gap-3 sm:grid-cols-3" role="list">
+      <ul className="grid grid-cols-3 gap-2 sm:gap-3" role="list">
         {items.map(({ days, q }) => {
           const count = q.data?.count ?? 0;
           const totalHh = q.data?.totalHh ?? 0;
@@ -42,16 +42,16 @@ export function ForecastStrip() {
           return (
             <li
               key={days}
-              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3"
+              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2.5 sm:p-3"
             >
               <div className="flex items-baseline justify-between">
-                <span className="text-[11px] uppercase tracking-[0.18em] text-ds-muted">{days}d</span>
-                <span className="text-xs text-ds-muted">{q.isLoading ? '…' : fmtHh(totalHh)} HH</span>
+                <span className="text-[11px] uppercase tracking-[0.16em] text-ds-muted">{days}d</span>
+                <span className="hidden text-xs text-ds-muted sm:inline">{q.isLoading ? '…' : fmtHh(totalHh)} HH</span>
               </div>
-              <p className="mt-1 text-2xl font-semibold text-text tabular-nums">
+              <p className="mt-1 text-xl font-semibold text-text tabular-nums sm:text-2xl">
                 {q.isLoading ? '—' : int(count)}
               </p>
-              <p className="text-xs text-ds-muted">ejecuciones</p>
+              <p className="text-[11px] text-ds-muted sm:text-xs">ejec. · {q.isLoading ? '…' : fmtHh(totalHh)} HH</p>
               <div
                 className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--color-border)]"
                 role="progressbar"

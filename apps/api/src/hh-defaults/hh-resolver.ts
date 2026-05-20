@@ -16,10 +16,11 @@ interface Rule {
   priority: number;
 }
 
-// Especificidad (mayor = más específico): PLANT_FREQ_ABC > PLANT_FREQ > PLANT > FREQ_ABC > FREQ > ABC > GLOBAL
+// Especificidad (mayor = más específico).
 const SCOPE_RANK: Record<string, number> = {
   PLANT_FREQ_ABC: 60,
   PLANT_FREQ: 50,
+  PLANT_ABC: 45,
   PLANT: 40,
   FREQ_ABC: 30,
   FREQ: 20,

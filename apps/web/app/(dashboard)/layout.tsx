@@ -24,7 +24,6 @@ interface MeResponse {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [mobileOpen, setMobileOpen] = useState(false);
   const me = useQuery({
     queryKey: ['auth-me'],
     queryFn: () => api<MeResponse>('/api/auth/me'),
@@ -41,10 +40,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const target = me.data.totpEnabled ? '/verify-2fa' : '/setup-2fa';
     if (pathname !== target) router.replace(target);
   }, [me.data, me.error, pathname, router]);
-
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [pathname]);
 
   if (me.isLoading) {
     return <GateState title="Validando sesión" detail="Comprobando autenticación y segundo factor." />;
@@ -69,14 +64,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-[100dvh] bg-bg">
-      <Sidebar mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
+      <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <PwaShell />
-        <Topbar
-          email={me.data?.email ?? ''}
-          role={me.data?.role ?? ''}
-          onMenuClick={() => setMobileOpen(true)}
-        />
+        <Topbar email={me.data?.email ?? ''} role={me.data?.role ?? ''} />
         <main className="flex-1 overflow-auto pb-[calc(env(safe-area-inset-bottom,0)+72px)] md:pb-0">
           <div className="mx-auto max-w-screen-2xl px-4 py-5 sm:px-6">{children}</div>
         </main>

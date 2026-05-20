@@ -12,15 +12,17 @@ interface NavItemProps {
   icon: LucideIcon;
   collapsed?: boolean;
   exactMatch?: boolean;
+  onNavigate?: () => void;
 }
 
-export function NavItem({ href, label, icon: Icon, collapsed, exactMatch }: NavItemProps) {
+export function NavItem({ href, label, icon: Icon, collapsed, exactMatch, onNavigate }: NavItemProps) {
   const pathname = usePathname();
   const isActive = exactMatch ? pathname === href : pathname.startsWith(href);
 
   const item = (
     <Link
       href={href}
+      onClick={onNavigate}
       className={cn(
         'flex items-center gap-2.5 rounded-md border-l-2 px-3 py-2 text-sm font-medium transition-colors',
         'hover:bg-accent-dim hover:text-ds-accent',

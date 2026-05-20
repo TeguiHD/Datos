@@ -121,7 +121,7 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 xl:grid-cols-4">
         <KpiCard title="HH plan período" value={pipeline ? HH_FORMAT.format(pipeline.totals.plannedHh) : '—'} tone="accent" loading={pipelineQuery.isLoading} />
         <KpiCard title="HH real período" value={pipeline ? HH_FORMAT.format(pipeline.totals.actualHh) : '—'} tone="ok" loading={pipelineQuery.isLoading} />
         <KpiCard title="Mes más riesgoso" value={worstMonth?.period ?? '—'} tone="danger" loading={pipelineQuery.isLoading} />

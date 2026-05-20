@@ -6,16 +6,33 @@ import { Lightbulb, Plus, Trash2, Wand2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { hh as fmtHh, int } from '@/lib/i18n/formatters';
 
-const SCOPES = [
-  'GLOBAL',
-  'ABC',
-  'FREQ',
-  'FREQ_ABC',
-  'PLANT',
-  'PLANT_FREQ',
-  'PLANT_FREQ_ABC',
-] as const;
-type Scope = (typeof SCOPES)[number];
+type Scope =
+  | 'GLOBAL'
+  | 'ABC'
+  | 'FREQ'
+  | 'FREQ_ABC'
+  | 'PLANT'
+  | 'PLANT_ABC'
+  | 'PLANT_FREQ'
+  | 'PLANT_FREQ_ABC';
+
+// El usuario elige Planta / Frecuencia / Criticidad (cada uno con "Todas").
+// El alcance técnico se deriva de qué campos se especificaron.
+function deriveScope(plantId: string, freq: string, abc: string): Scope {
+  const p = !!plantId;
+  const f = !!freq;
+  const a = !!abc;
+  if (p && f && a) return 'PLANT_FREQ_ABC';
+  if (p && f) return 'PLANT_FREQ';
+  if (p && a) return 'PLANT_ABC';
+  if (p) return 'PLANT';
+  if (f && a) return 'FREQ_ABC';
+  if (f) return 'FREQ';
+  if (a) return 'ABC';
+  return 'GLOBAL';
+}
+
+const FREQ_OPTIONS = ['1M', '3M', '6M', '1A', '5A'];
 
 interface HhRule {
   id: string;
@@ -46,15 +63,6 @@ interface Suggestion {
   stdev: number;
 }
 
-function scopeRequires(scope: Scope) {
-  const parts = scope.split('_');
-  return {
-    plant: parts.includes('PLANT'),
-    freq: parts.includes('FREQ'),
-    abc: parts.includes('ABC'),
-  };
-}
-
 export default function HhDefaultsPage() {
   const qc = useQueryClient();
   const rules = useQuery({
@@ -71,7 +79,6 @@ export default function HhDefaultsPage() {
     staleTime: 60_000,
   });
 
-  const [scope, setScope] = useState<Scope>('FREQ');
   const [plantId, setPlantId] = useState('');
   const [freq, setFreq] = useState('');
   const [abc, setAbc] = useState('');
@@ -79,17 +86,16 @@ export default function HhDefaultsPage() {
   const [priority, setPriority] = useState('0');
   const [note, setNote] = useState('');
   const [err, setErr] = useState<string | null>(null);
-  const requires = scopeRequires(scope);
 
   const upsert = useMutation({
     mutationFn: () =>
       api('/api/hh-defaults', {
         method: 'POST',
         body: JSON.stringify({
-          scope,
-          plantId: requires.plant ? plantId || undefined : undefined,
-          frecuenciaCodigo: requires.freq ? freq || undefined : undefined,
-          abc: requires.abc ? abc || undefined : undefined,
+          scope: deriveScope(plantId, freq, abc),
+          plantId: plantId || undefined,
+          frecuenciaCodigo: freq || undefined,
+          abc: abc || undefined,
           hhPlan: Number(hh),
           priority: Number(priority) || 0,
           note: note || undefined,
@@ -156,64 +162,57 @@ export default function HhDefaultsPage() {
         <p className="text-[11px] uppercase tracking-[0.18em] text-ds-muted">Administración</p>
         <h1 className="text-2xl font-semibold text-text">HH por defecto</h1>
         <p className="mt-1 max-w-3xl text-sm text-ds-muted">
-          Reglas que asignan HH plan cuando el Excel no las trae (ej. ESSC Sur). Las más específicas ganan:
-          <span className="font-mono"> PLANT_FREQ_ABC &gt; PLANT_FREQ &gt; PLANT &gt; FREQ_ABC &gt; FREQ &gt; ABC &gt; GLOBAL</span>.
+          Define cuántas horas-hombre (HH) asignar a una tarea cuando el Excel no las trae.
+          Eliges a qué tareas aplica la regla; si dejas un campo en <span className="text-text">Todas</span>,
+          la regla cubre todas las opciones de ese campo. Cuando varias reglas coinciden, gana la más específica.
         </p>
       </header>
 
       <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 space-y-3">
         <h2 className="font-semibold text-text">Nueva regla</h2>
-        <div className="grid gap-3 sm:grid-cols-[10rem_1fr_1fr_1fr_6rem_6rem_auto]">
+        <p className="text-xs text-ds-muted">Aplica esta regla a:</p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_6rem_6rem_auto]">
           <label className="text-xs text-ds-muted flex flex-col gap-1">
-            Alcance
-            <select
-              value={scope}
-              onChange={(e) => setScope(e.target.value as Scope)}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-sm min-h-[44px]"
-            >
-              {SCOPES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </label>
-          <label className="text-xs text-ds-muted flex flex-col gap-1">
-            Planta {requires.plant && <span className="text-danger">·</span>}
+            Planta
             <select
               value={plantId}
               onChange={(e) => setPlantId(e.target.value)}
-              disabled={!requires.plant}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-sm min-h-[44px] disabled:opacity-50"
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-sm min-h-[44px]"
             >
-              <option value="">—</option>
+              <option value="">Todas las plantas</option>
               {(plants.data?.rows ?? []).map((p) => (
-                <option key={p.id} value={p.id}>{p.name} ({p.psr})</option>
+                <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
           </label>
           <label className="text-xs text-ds-muted flex flex-col gap-1">
             Frecuencia
-            <input
-              value={freq}
-              disabled={!requires.freq}
-              onChange={(e) => setFreq(e.target.value.toUpperCase())}
-              placeholder="1M, 6M, 1A…"
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-sm min-h-[44px] disabled:opacity-50 font-mono"
-            />
-          </label>
-          <label className="text-xs text-ds-muted flex flex-col gap-1">
-            ABC
             <select
-              value={abc}
-              disabled={!requires.abc}
-              onChange={(e) => setAbc(e.target.value)}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-sm min-h-[44px] disabled:opacity-50"
+              value={freq}
+              onChange={(e) => setFreq(e.target.value)}
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-sm min-h-[44px]"
             >
-              <option value="">—</option>
-              <option value="A">A</option>
-              <option value="B">B</option>
-              <option value="C">C</option>
+              <option value="">Todas las frecuencias</option>
+              {FREQ_OPTIONS.map((f) => (
+                <option key={f} value={f}>{f}</option>
+              ))}
             </select>
           </label>
           <label className="text-xs text-ds-muted flex flex-col gap-1">
-            HH plan
+            Criticidad
+            <select
+              value={abc}
+              onChange={(e) => setAbc(e.target.value)}
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-sm min-h-[44px]"
+            >
+              <option value="">Todas</option>
+              <option value="A">A · crítica</option>
+              <option value="B">B · importante</option>
+              <option value="C">C · estándar</option>
+            </select>
+          </label>
+          <label className="text-xs text-ds-muted flex flex-col gap-1">
+            HH a asignar
             <input
               type="number"
               inputMode="decimal"
@@ -231,6 +230,7 @@ export default function HhDefaultsPage() {
               inputMode="numeric"
               value={priority}
               onChange={(e) => setPriority(e.target.value)}
+              title="Si dos reglas igual de específicas coinciden, gana la de mayor prioridad."
               className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-sm min-h-[44px] tabular-nums"
             />
           </label>
@@ -238,7 +238,7 @@ export default function HhDefaultsPage() {
             type="button"
             onClick={() => upsert.mutate()}
             disabled={upsert.isPending || !hh}
-            className="inline-flex items-center gap-1.5 rounded-md bg-ds-accent px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 min-h-[44px]"
+            className="inline-flex items-center justify-center gap-1.5 rounded-md bg-ds-accent px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 min-h-[44px] self-end"
           >
             <Plus className="size-4" aria-hidden />
             Guardar
@@ -320,10 +320,9 @@ export default function HhDefaultsPage() {
           <table className="min-w-full text-sm">
             <thead className="bg-[var(--color-surface-2)] text-ds-muted">
               <tr>
-                <th className="px-3 py-2 text-left">Alcance</th>
                 <th className="px-3 py-2 text-left">Planta</th>
-                <th className="px-3 py-2 text-left">Frec.</th>
-                <th className="px-3 py-2 text-left">ABC</th>
+                <th className="px-3 py-2 text-left">Frecuencia</th>
+                <th className="px-3 py-2 text-left">Criticidad</th>
                 <th className="px-3 py-2 text-right">HH</th>
                 <th className="px-3 py-2 text-right">Prio</th>
                 <th className="px-3 py-2 text-left">Nota</th>
@@ -332,19 +331,18 @@ export default function HhDefaultsPage() {
             </thead>
             <tbody>
               {rules.isLoading && (
-                <tr><td colSpan={8} className="px-3 py-6 text-center text-ds-muted">Cargando…</td></tr>
+                <tr><td colSpan={7} className="px-3 py-6 text-center text-ds-muted">Cargando…</td></tr>
               )}
               {rules.data?.length === 0 && (
-                <tr><td colSpan={8} className="px-3 py-6 text-center text-ds-muted">Sin reglas configuradas.</td></tr>
+                <tr><td colSpan={7} className="px-3 py-6 text-center text-ds-muted">Sin reglas configuradas.</td></tr>
               )}
               {rules.data?.map((r) => {
                 const plant = plants.data?.rows.find((p) => p.id === r.plantId);
                 return (
                   <tr key={r.id} className="border-t border-[var(--color-border)] hover:bg-[var(--color-surface-2)]">
-                    <td className="px-3 py-2 font-mono text-xs">{r.scope}</td>
-                    <td className="px-3 py-2 text-xs">{plant?.name ?? r.plantId ?? '—'}</td>
-                    <td className="px-3 py-2 font-mono text-xs">{r.frecuenciaCodigo ?? '—'}</td>
-                    <td className="px-3 py-2">{r.abc ?? '—'}</td>
+                    <td className="px-3 py-2 text-xs">{plant?.name ?? (r.plantId ? r.plantId : 'Todas')}</td>
+                    <td className="px-3 py-2 font-mono text-xs">{r.frecuenciaCodigo ?? 'Todas'}</td>
+                    <td className="px-3 py-2">{r.abc ?? 'Todas'}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{fmtHh(r.hhPlan)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{r.priority}</td>
                     <td className="px-3 py-2 text-xs text-ds-muted">{r.note ?? '—'}</td>

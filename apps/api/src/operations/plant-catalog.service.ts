@@ -15,7 +15,7 @@ const REVIEW_PLANT = 'POR REVISAR';
 
 const SEED_PLANTS: SeedPlant[] = [
   { name: 'GOODYEAR', aliases: ['GOODYEAR', 'GOOD YEAR', 'PLANTA 009 GOOD YEAR', 'ESZS-90'] },
-  { name: 'CAMILO FERRON', aliases: ['CAMILO FERRON', 'CAMILO FERRÓN', 'PLANTA 007 CAMILO FERRON', 'ESZS-70'] },
+  { name: 'CAMILO FERRON', aliases: ['CAMILO FERRON', 'CAMILO FERRÓN', 'C FERRON', 'C. FERRÓN', 'C.FERRÓN', 'FERRON', 'PLANTA 007 CAMILO FERRON', 'ESZS-70'] },
   { name: 'MYLPAN', aliases: ['MYLPAN', 'MIL PAN', 'PLANTA 008 MYLPAN', 'ESZS-80'] },
   { name: 'EDENSA', aliases: ['EDENSA', 'EDEN S.A.', 'EDEN S.A', 'EDEN SA', 'PLANTA 010 EDEN SA'], status: PlantStatus.STANDBY },
   { name: 'GOLDEN', aliases: ['GOLDEN', 'GOLDEAN CLEAN'], status: PlantStatus.STANDBY },

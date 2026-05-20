@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, CalendarClock, ClipboardList, Factory } from 'lucide-react';
 import { api } from '@/lib/api';
 import { hh, int } from '@/lib/i18n/formatters';
-import { plantStatusLabels } from '@datos/shared-types';
+import { abcLabels, plantStatusLabels } from '@datos/shared-types';
 import { ComplianceGauge } from './_components/ComplianceGauge';
 import { AbcDonut } from './_components/AbcDonut';
 import { ForecastStrip } from './_components/ForecastStrip';
@@ -57,7 +57,7 @@ export default function DashboardHome() {
     const key = row.indicadorAbc ?? 'Otros';
     return {
       key,
-      label: key in ABC_COLORS ? `Tipo ${key}` : 'Sin clasificar',
+      label: abcLabels[key as keyof typeof abcLabels] ?? 'Sin clasificar',
       value: row._count._all,
       color: ABC_COLORS[key] ?? '#64748b',
     };
@@ -71,11 +71,11 @@ export default function DashboardHome() {
         <p className="mt-1 max-w-3xl text-sm text-ds-muted">Vista operativa mínima: plantas reales, tareas importadas y próximas HH planificadas.</p>
       </header>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid grid-cols-2 gap-2.5 sm:gap-3 xl:grid-cols-4">
         <Card title="Plantas" value={int(plants.data?.total ?? 0)} icon={<Factory className="size-4" />} />
         <Card title="Tareas" value={int(kpis.data?.taskCount ?? 0)} icon={<ClipboardList className="size-4" />} />
         <Card title="Próx. 30 días" value={int(upcoming.data?.count ?? 0)} detail={`${hh(upcoming.data?.totalHh ?? 0)} HH`} icon={<CalendarClock className="size-4" />} />
-        <Card title="Vencidas" value={int(kpis.data?.overdueCount ?? 0)} detail={`${int(kpis.data?.discCount ?? 0)} discrepancias`} icon={<AlertTriangle className="size-4" />} />
+        <Card title="Vencidas" value={int(kpis.data?.overdueCount ?? 0)} detail={`${int(kpis.data?.discCount ?? 0)} discrepancias`} tone="danger" icon={<AlertTriangle className="size-4" />} />
       </section>
 
       <ForecastStrip />
@@ -117,8 +117,11 @@ export default function DashboardHome() {
           </div>
 
           <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-            <h2 className="font-semibold text-text">Criticidad ABC</h2>
-            <p className="text-xs text-ds-muted">Distribución de tareas activas</p>
+            <h2 className="font-semibold text-text">Criticidad de las tareas</h2>
+            <p className="text-xs text-ds-muted">
+              Clasificación ABC de SAP: <span className="text-text">A</span> crítica ·{' '}
+              <span className="text-text">B</span> importante · <span className="text-text">C</span> estándar.
+            </p>
             <div className="mt-3 flex justify-center">
               <AbcDonut slices={abcSlices} centerLabel="tareas" />
             </div>
@@ -129,15 +132,37 @@ export default function DashboardHome() {
   );
 }
 
-function Card({ title, value, detail, icon }: { title: string; value: string; detail?: string; icon: React.ReactNode }) {
+function Card({
+  title,
+  value,
+  detail,
+  icon,
+  tone,
+}: {
+  title: string;
+  value: string;
+  detail?: string;
+  icon: React.ReactNode;
+  tone?: 'danger';
+}) {
   return (
-    <article className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+    <article
+      className={`rounded-xl border bg-[var(--color-surface)] p-3 sm:p-4 ${
+        tone === 'danger' ? 'border-danger/30' : 'border-[var(--color-border)]'
+      }`}
+    >
       <div className="flex items-center justify-between gap-2 text-ds-muted">
-        <p className="text-[11px] uppercase tracking-[0.18em]">{title}</p>
+        <p className="text-[10px] uppercase tracking-[0.16em] sm:text-[11px] sm:tracking-[0.18em]">{title}</p>
         {icon}
       </div>
-      <p className="mt-4 text-2xl font-semibold text-text tabular-nums">{value}</p>
-      {detail && <p className="mt-1 text-sm text-ds-muted">{detail}</p>}
+      <p
+        className={`mt-2 text-xl font-semibold tabular-nums sm:mt-4 sm:text-2xl ${
+          tone === 'danger' ? 'text-danger' : 'text-text'
+        }`}
+      >
+        {value}
+      </p>
+      {detail && <p className="mt-0.5 text-xs text-ds-muted sm:mt-1 sm:text-sm">{detail}</p>}
     </article>
   );
 }

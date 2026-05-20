@@ -197,8 +197,15 @@ export class ImportService {
     for (const item of parsed.tasks) {
       try {
         await this.prisma.$transaction(async (tx) => {
+          // En el formato ESSC Sur el nombre de planta está en la columna "Plan"
+          // (planMantPreventivo), p.ej. "MP PSR CEMIN 6M 1A 5A (...)". Tiene
+          // prioridad sobre la ubicación técnica, que es a nivel de equipo.
           const plantSource =
-            item.task.denomUbicacionTecnica ?? item.task.ubicacionTecnica ?? item.task.descPosicionMant ?? '';
+            item.task.planMantPreventivo ??
+            item.task.denomUbicacionTecnica ??
+            item.task.ubicacionTecnica ??
+            item.task.descPosicionMant ??
+            '';
           const plant = await this.plantCatalog.resolveFromLocation(String(plantSource), tx);
           const parsedHh = Number(item.task.hhReal ?? 0);
           const taskData = {

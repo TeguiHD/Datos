@@ -1,12 +1,10 @@
 'use client';
 
-import { Menu, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils/cn';
 import { CommandPalette } from './CommandPalette';
-import { DensityToggle } from './DensityToggle';
 import { ThemeToggle } from './ThemeToggle';
 import { UserMenu } from './UserMenu';
 
@@ -19,20 +17,21 @@ const BREADCRUMB_MAP: Record<string, string> = {
   '/dashboard/estadisticas': 'Estadísticas',
   '/dashboard/revisiones': 'Revisiones',
   '/dashboard/plantas': 'Plantas',
-  '/dashboard/analytics': 'Analytics',
+  '/dashboard/analytics': 'Analítica',
   '/dashboard/graficos': 'Gráficos IA',
   '/dashboard/importacion': 'Importación',
-  '/dashboard/admin': 'Admin',
+  '/dashboard/reportes': 'Reportes firmados',
+  '/dashboard/admin/hh': 'HH por defecto',
+  '/dashboard/admin/usuarios': 'Usuarios',
   '/dashboard/auditoria': 'Auditoría',
 };
 
 interface TopbarProps {
   email: string;
   role: string;
-  onMenuClick?: () => void;
 }
 
-export function Topbar({ email, role, onMenuClick }: TopbarProps) {
+export function Topbar({ email, role }: TopbarProps) {
   const pathname = usePathname();
   const crumb = BREADCRUMB_MAP[pathname] ?? 'Dashboard';
   const [commandOpen, setCommandOpen] = useState(false);
@@ -57,16 +56,6 @@ export function Topbar({ email, role, onMenuClick }: TopbarProps) {
           'bg-[var(--color-surface)]/90 px-4 backdrop-blur-sm',
         )}
       >
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8 md:hidden"
-          onClick={onMenuClick}
-          aria-label="Abrir menú"
-        >
-          <Menu className="size-4" />
-        </Button>
-
         <div className="min-w-0 flex-1">
           <p className="text-[10px] uppercase leading-none tracking-[0.16em] text-ds-muted">SAP PM</p>
           <h1 className="truncate text-sm font-semibold text-text">{crumb}</h1>
@@ -88,7 +77,6 @@ export function Topbar({ email, role, onMenuClick }: TopbarProps) {
         </button>
 
         <div className="flex items-center gap-1">
-          <DensityToggle />
           <ThemeToggle />
           <UserMenu email={email} role={role} />
         </div>
