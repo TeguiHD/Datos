@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export function proxy(req: NextRequest) {
-  const nonce = btoa(crypto.randomUUID());
   const isDev = process.env.NODE_ENV !== 'production';
   const accessToken = req.cookies.get('access_token')?.value;
   const refreshToken = req.cookies.get('refresh_token')?.value;
@@ -37,22 +36,17 @@ export function proxy(req: NextRequest) {
     `media-src 'self' data: blob:`,
     `font-src 'self' data:`,
     `style-src 'self' 'unsafe-inline'`,
-    `script-src 'self' 'nonce-${nonce}' https://static.cloudflareinsights.com${isDev ? " 'unsafe-eval'" : ''}`,
+    // Next.js inyecta scripts de streaming (self.__next_f) que no admiten
+    // nonce de forma fiable; se usa 'unsafe-inline'. Superficie XSS baja:
+    // app con auth+2FA, sin HTML de usuario, sólo scripts de 'self'.
+    `script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com${isDev ? " 'unsafe-eval'" : ''}`,
     `connect-src ${connectSrc}`,
     `object-src 'none'`,
     `upgrade-insecure-requests`,
   ].join('; ');
 
-  const reqHeaders = new Headers(req.headers);
-  reqHeaders.set('x-nonce', nonce);
-  // Next.js lee el nonce desde el header Content-Security-Policy del request
-  // y lo aplica a todos sus <script> inline/chunk. Sin esto, sus scripts
-  // quedan sin nonce y el navegador los bloquea.
-  reqHeaders.set('Content-Security-Policy', csp);
-
-  const res = NextResponse.next({ request: { headers: reqHeaders } });
+  const res = NextResponse.next();
   res.headers.set('Content-Security-Policy', csp);
-  res.headers.set('x-nonce', nonce);
   res.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
   res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.headers.set('X-Content-Type-Options', 'nosniff');
