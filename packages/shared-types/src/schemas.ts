@@ -9,6 +9,14 @@ export const emailSchema = z
   .max(254, 'Email muy largo')
   .email('Email inválido');
 
+// Para verificar una contraseña EXISTENTE (login, currentPassword): laxa.
+// No aplica la política de fortaleza — una contraseña bootstrap puede ser corta.
+export const existingPasswordSchema = z
+  .string()
+  .min(1, 'Ingresa tu contraseña')
+  .max(256, 'Máximo 256 caracteres');
+
+// Para DEFINIR una contraseña nueva: exige la política completa.
 export const passwordSchema = z
   .string()
   .min(12, 'Mínimo 12 caracteres')
@@ -32,7 +40,7 @@ export const backupCodeSchema = z
 
 export const loginSchema = z.object({
   email: emailSchema,
-  password: passwordSchema,
+  password: existingPasswordSchema,
   rememberDevice: z.boolean().optional(),
 });
 
@@ -42,7 +50,7 @@ export const totpVerifySchema = z.object({
 });
 
 export const changePasswordSchema = z.object({
-  currentPassword: passwordSchema,
+  currentPassword: existingPasswordSchema,
   newPassword: strongPasswordSchema,
 });
 
