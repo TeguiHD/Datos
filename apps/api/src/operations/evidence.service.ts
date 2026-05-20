@@ -62,7 +62,7 @@ export class EvidenceService {
       include: { execution: { include: { planTask: { include: { plant: true } } } } },
     });
     if (!evidence || evidence.deletedAt) throw new NotFoundException('Evidence not found');
-    if (user.role === Role.VIEWER && !evidence.execution.planTask.plant.visibleToViewer) {
+    if (user.role === Role.VIEWER && evidence.execution && !evidence.execution.planTask.plant.visibleToViewer) {
       throw new ForbiddenException('Evidence is not visible for viewer');
     }
 

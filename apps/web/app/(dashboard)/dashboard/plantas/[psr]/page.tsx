@@ -2,213 +2,287 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { FormEvent, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, CalendarClock, CheckCircle2, ClipboardList, Pencil, Plus, SkipForward, Trash2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CalendarClock,
+  CheckCircle2,
+  ClipboardList,
+  Plus,
+  Search,
+  Settings2,
+  Trash2,
+} from 'lucide-react';
 import { api } from '@/lib/api';
-import { Badge } from '@/components/ui/badge';
+import { toast } from '@/lib/toast';
+import { hh as fmtHh, int, dateFormat } from '@/lib/i18n/formatters';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { hh as fmtHh, int, dateFormat } from '@/lib/i18n/formatters';
-import { plantStatusLabels } from '@datos/shared-types';
-import { PlantCalendarHeatmap } from '../../_components/PlantCalendarHeatmap';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 type PlantStatus = 'ACTIVE' | 'STANDBY' | 'INACTIVE';
 type ExecStatus = 'PENDING' | 'OVERDUE' | 'DONE' | 'SKIPPED';
+type MaintType = 'PREVENTIVA' | 'CORRECTIVA' | 'PREDICTIVA';
+
+interface ExecutionRow {
+  id: string;
+  dueDate: string;
+  status: ExecStatus;
+  hhPlanned: string | number;
+  hhActual: string | number | null;
+}
+
+interface TaskRow {
+  id: string;
+  posicionMant: string | null;
+  titulo: string | null;
+  descripcion: string | null;
+  tipo: MaintType;
+  responsable: string | null;
+  descPosicionMant: string | null;
+  denomObjetoTecnico: string | null;
+  equipo: string | null;
+  frecuenciaCodigo: string | null;
+  frecuenciaMeses: number | null;
+  mesInicio: number | null;
+  hhReal: string | number | null;
+  executions: ExecutionRow[];
+}
 
 interface PlantDetail {
   id: string;
   psr: string;
   name: string;
   status: PlantStatus;
-  aliases: Array<{ id: string; alias: string; source: string }>;
   maintenanceTasks: TaskRow[];
   kpis: {
     maintenanceTaskCount: number;
     hhBase: number;
-    nextDueDate: string | null;
-    statusCounts: Array<{ status: ExecStatus; count: number; hhPlanned: number; hhActual: number }>;
+    statusCounts: Array<{ status: ExecStatus; count: number }>;
   };
 }
 
-interface TaskRow {
-  id: string;
-  plantId: string | null;
-  descPosicionMant: string | null;
-  denomUbicacionTecnica: string | null;
-  equipo: string | null;
-  denomObjetoTecnico: string | null;
-  frecuenciaCodigo: string | null;
-  frecuenciaMeses: number | null;
-  mesInicio: number | null;
-  hhReal: string | number | null;
-  manualOverride: boolean;
-  schedule: Array<{ year: number; month: number; hh: string | number; source: string }>;
-  executions: Array<{ id: string; dueDate: string; status: ExecStatus; hhPlanned: string | number; hhActual: string | number | null; notes: string | null }>;
-}
-
-const DATE = dateFormat;
-
 const FREQUENCIES = [
   { code: '1M', label: 'Mensual', months: 1 },
+  { code: '3M', label: 'Trimestral', months: 3 },
   { code: '6M', label: 'Semestral', months: 6 },
   { code: '1A', label: 'Anual', months: 12 },
   { code: '5A', label: 'Quinquenal', months: 60 },
 ];
 
+const TYPE_META: Record<MaintType, { label: string; cls: string }> = {
+  PREVENTIVA: { label: 'Preventiva', cls: 'bg-blue-100 text-blue-800' },
+  CORRECTIVA: { label: 'Correctiva', cls: 'bg-amber-100 text-amber-800' },
+  PREDICTIVA: { label: 'Predictiva', cls: 'bg-violet-100 text-violet-800' },
+};
+
+const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+function freqLabel(code: string | null): string {
+  return FREQUENCIES.find((f) => f.code === code)?.label ?? code ?? 'Sin frecuencia';
+}
+
+function taskTitle(t: TaskRow): string {
+  return t.titulo || t.descPosicionMant || t.descripcion || 'Mantención sin título';
+}
+
+function nextDue(t: TaskRow): ExecutionRow | null {
+  const pend = t.executions
+    .filter((e) => e.status === 'PENDING' || e.status === 'OVERDUE')
+    .sort((a, b) => +new Date(a.dueDate) - +new Date(b.dueDate));
+  return pend[0] ?? null;
+}
+
 export default function PlantDetailPage() {
   const params = useParams<{ psr: string }>();
   const psr = decodeURIComponent(params.psr);
-  const queryClient = useQueryClient();
-  const [editingTask, setEditingTask] = useState<TaskRow | 'new' | null>(null);
-  const [deletingTask, setDeletingTask] = useState<TaskRow | null>(null);
+  const qc = useQueryClient();
+
+  const [tab, setTab] = useState<'mantenciones' | 'proximas'>('mantenciones');
+  const [search, setSearch] = useState('');
+  const [fTipo, setFTipo] = useState('');
+  const [fFrec, setFFrec] = useState('');
+  const [fEstado, setFEstado] = useState('');
+  const [editing, setEditing] = useState<TaskRow | 'new' | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const plant = useQuery({
     queryKey: ['plant-detail', psr],
     queryFn: () => api<PlantDetail>(`/api/plantas/${encodeURIComponent(psr)}`),
   });
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['plant-detail', psr] });
+    qc.invalidateQueries({ queryKey: ['plantas-panel'] });
+  };
 
   const row = plant.data;
-  const status = statusMap(row?.kpis.statusCounts ?? []);
-  const upcoming = useMemo(
-    () =>
-      (row?.maintenanceTasks ?? [])
-        .flatMap((task) => task.executions.map((execution) => ({ ...execution, task })))
-        .filter((execution) => execution.status === 'PENDING' || execution.status === 'OVERDUE')
-        .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
-        .slice(0, 12),
-    [row],
-  );
+  const tasks = useMemo(() => {
+    const all = row?.maintenanceTasks ?? [];
+    const q = search.trim().toLowerCase();
+    return all.filter((t) => {
+      if (fTipo && t.tipo !== fTipo) return false;
+      if (fFrec && t.frecuenciaCodigo !== fFrec) return false;
+      if (fEstado) {
+        const nd = nextDue(t);
+        const st = nd?.status ?? 'DONE';
+        if (fEstado === 'pendientes' && !(st === 'PENDING' || st === 'OVERDUE')) return false;
+        if (fEstado === 'vencidas' && st !== 'OVERDUE') return false;
+        if (fEstado === 'aldia' && (st === 'PENDING' || st === 'OVERDUE')) return false;
+      }
+      if (q) {
+        const hay = `${taskTitle(t)} ${t.posicionMant ?? ''} ${t.responsable ?? ''} ${t.equipo ?? ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [row, search, fTipo, fFrec, fEstado]);
 
-  if (plant.isLoading) return <div className="skeleton h-80 rounded-xl" />;
-  if (!row) return <PanelState title="No se pudo cargar la planta" detail="Revisa sesión, permisos o disponibilidad del API." />;
+  const upcoming = useMemo(() => {
+    return (row?.maintenanceTasks ?? [])
+      .flatMap((t) => t.executions.filter((e) => e.status === 'PENDING' || e.status === 'OVERDUE').map((e) => ({ e, t })))
+      .sort((a, b) => +new Date(a.e.dueDate) - +new Date(b.e.dueDate))
+      .slice(0, 40);
+  }, [row]);
+
+  if (plant.isLoading) return <div className="skeleton h-96 rounded-xl" />;
+  if (!row) {
+    return (
+      <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center">
+        <p className="font-semibold text-text">No se pudo cargar la planta</p>
+        <p className="mt-1 text-sm text-ds-muted">Revisa tu sesión o permisos.</p>
+      </div>
+    );
+  }
+
+  const counts = Object.fromEntries(row.kpis.statusCounts.map((s) => [s.status, s.count])) as Partial<
+    Record<ExecStatus, number>
+  >;
+  const overdue = counts.OVERDUE ?? 0;
+  const proximas = counts.PENDING ?? 0;
 
   return (
-    <div className="flex flex-col gap-5 fade-up">
+    <div className="flex flex-col gap-4 fade-up">
+      {/* Cabecera */}
       <header className="flex flex-col gap-3">
-        <Link href="/dashboard/plantas" className="inline-flex w-fit items-center gap-2 text-sm text-ds-muted hover:text-text">
-          <ArrowLeft className="size-4" />
-          Plantas
+        <Link href="/dashboard/plantas" className="inline-flex w-fit items-center gap-1.5 text-sm text-ds-muted hover:text-text">
+          <ArrowLeft className="size-4" /> Plantas
         </Link>
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-semibold text-text">{row.name}</h1>
-              <StatusBadge status={row.status} />
-            </div>
-            <p className="mt-1 text-sm text-ds-muted">
-              <span className="font-mono">{row.psr}</span> · {row.aliases.length} alias{row.aliases.length === 1 ? '' : 'es'} · {int(row.maintenanceTasks.length)} tareas
-            </p>
-            <p className="mt-0.5 text-xs text-ds-muted">{plantStatusLabels[row.status] ?? row.status}</p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-semibold text-text">{row.name}</h1>
+            <PlantStatusChip status={row.status} />
           </div>
-          <Button onClick={() => setEditingTask('new')}>
-            <Plus className="size-4" />
-            Agregar tarea
+          <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
+            <Settings2 className="size-4" /> Ajustes
           </Button>
+        </div>
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          <Kpi label="Mantenciones" value={int(row.kpis.maintenanceTaskCount)} icon={<ClipboardList className="size-4" />} />
+          <Kpi label="Vencidas" value={int(overdue)} icon={<AlertTriangle className="size-4" />} tone={overdue ? 'danger' : undefined} />
+          <Kpi label="Próximas" value={int(proximas)} icon={<CalendarClock className="size-4" />} />
+          <Kpi label="Completadas" value={int(counts.DONE ?? 0)} icon={<CheckCircle2 className="size-4" />} />
         </div>
       </header>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <Metric title="Tareas" value={int(row.kpis.maintenanceTaskCount)} icon={<ClipboardList className="size-4" />} />
-        <Metric title="HH base" value={fmtHh(row.kpis.hhBase)} icon={<Pencil className="size-4" />} />
-        <Metric title="Pendientes" value={int((status.PENDING ?? 0) + (status.OVERDUE ?? 0))} icon={<CalendarClock className="size-4" />} />
-        <Metric title="Completadas" value={int(status.DONE ?? 0)} icon={<CheckCircle2 className="size-4" />} />
-        <Metric title="Omitidas" value={int(status.SKIPPED ?? 0)} icon={<SkipForward className="size-4" />} />
-      </section>
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-[var(--color-border)]">
+        <TabBtn active={tab === 'mantenciones'} onClick={() => setTab('mantenciones')}>
+          Mantenciones
+        </TabBtn>
+        <TabBtn active={tab === 'proximas'} onClick={() => setTab('proximas')}>
+          Próximas {upcoming.length > 0 && <span className="ml-1 text-xs text-ds-muted">({upcoming.length})</span>}
+        </TabBtn>
+      </div>
 
-      <Tabs defaultValue="tareas">
-        <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-          <TabsList className="w-max sm:w-auto">
-            <TabsTrigger value="resumen" className="min-h-[40px]">Resumen</TabsTrigger>
-            <TabsTrigger value="tareas" className="min-h-[40px]">Tareas</TabsTrigger>
-            <TabsTrigger value="cronograma" className="min-h-[40px]">Cronograma</TabsTrigger>
-            <TabsTrigger value="ajustes" className="min-h-[40px]">Ajustes</TabsTrigger>
-          </TabsList>
-        </div>
-
-        <TabsContent value="resumen" className="mt-4">
-          <div className="mb-4">
-            <PlantCalendarHeatmap
-              executions={row.maintenanceTasks.flatMap((t) =>
-                t.executions.map((e) => ({
-                  id: e.id,
-                  dueDate: e.dueDate,
-                  status: e.status,
-                  hhPlanned: e.hhPlanned,
-                })),
-              )}
-            />
+      {tab === 'mantenciones' && (
+        <>
+          {/* Toolbar */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[12rem] flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-ds-muted" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar por título, ID, responsable…"
+                className="pl-8"
+              />
+            </div>
+            <FilterSelect value={fTipo} onChange={setFTipo} placeholder="Todo tipo">
+              <option value="PREVENTIVA">Preventiva</option>
+              <option value="CORRECTIVA">Correctiva</option>
+              <option value="PREDICTIVA">Predictiva</option>
+            </FilterSelect>
+            <FilterSelect value={fFrec} onChange={setFFrec} placeholder="Toda frecuencia">
+              {FREQUENCIES.map((f) => (
+                <option key={f.code} value={f.code}>
+                  {f.label}
+                </option>
+              ))}
+            </FilterSelect>
+            <FilterSelect value={fEstado} onChange={setFEstado} placeholder="Todo estado">
+              <option value="pendientes">Pendientes</option>
+              <option value="vencidas">Vencidas</option>
+              <option value="aldia">Al día</option>
+            </FilterSelect>
+            <Button onClick={() => setEditing('new')}>
+              <Plus className="size-4" /> Nueva mantención
+            </Button>
           </div>
-          <section className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-            <article className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-              <h2 className="font-semibold text-text">Frecuencias</h2>
-              <div className="mt-3 grid gap-2">
-                {FREQUENCIES.map((freq) => {
-                  const count = row.maintenanceTasks.filter((task) => task.frecuenciaCodigo === freq.code).length;
-                  return <StatLine key={freq.code} label={freq.label} value={`${int(count)} tareas`} />;
-                })}
-              </div>
-            </article>
-            <article className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-              <h2 className="font-semibold text-text">Próximas actividades</h2>
-              <div className="mt-3 grid gap-2">
-                {upcoming.slice(0, 6).map((execution) => (
-                  <div key={execution.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="truncate text-sm font-medium text-text">{execution.task.descPosicionMant ?? 'Sin descripción'}</p>
-                      <ExecutionBadge status={execution.status} />
-                    </div>
-                    <p className="mt-1 text-xs text-ds-muted">{DATE.format(new Date(execution.dueDate))} · {labelFrequency(execution.task.frecuenciaCodigo)}</p>
-                  </div>
-                ))}
-              </div>
-            </article>
-          </section>
-        </TabsContent>
 
-        <TabsContent value="tareas" className="mt-4">
-          <section className="grid gap-3">
-            {row.maintenanceTasks.map((task) => (
-              <TaskCard key={task.id} task={task} onEdit={() => setEditingTask(task)} onDelete={() => setDeletingTask(task)} />
-            ))}
-          </section>
-        </TabsContent>
+          {/* Lista */}
+          {tasks.length === 0 ? (
+            <EmptyState
+              title={row.maintenanceTasks.length === 0 ? 'Esta planta no tiene mantenciones' : 'Sin resultados'}
+              detail={
+                row.maintenanceTasks.length === 0
+                  ? 'Crea la primera con "Nueva mantención".'
+                  : 'Ajusta la búsqueda o los filtros.'
+              }
+            />
+          ) : (
+            <ul className="grid gap-2" role="list">
+              {tasks.map((t) => (
+                <MaintenanceCard key={t.id} task={t} onOpen={() => setEditing(t)} />
+              ))}
+            </ul>
+          )}
+        </>
+      )}
 
-        <TabsContent value="cronograma" className="mt-4">
-          <section className="grid gap-3">
-            {upcoming.map((execution) => (
-              <ExecutionCard key={execution.id} execution={execution} onSaved={() => queryClient.invalidateQueries({ queryKey: ['plant-detail', psr] })} />
-            ))}
-            {upcoming.length === 0 && <PanelState title="Sin ejecuciones próximas" detail="Agrega tareas o revisa la frecuencia/mes de inicio." />}
-          </section>
-        </TabsContent>
+      {tab === 'proximas' && (
+        <ProximasList
+          rows={upcoming}
+          onOpenTask={(t) => setEditing(t)}
+          onChanged={refresh}
+        />
+      )}
 
-        <TabsContent value="ajustes" className="mt-4">
-          <PlantSettings plant={row} onSaved={() => queryClient.invalidateQueries({ queryKey: ['plant-detail', psr] })} />
-        </TabsContent>
-      </Tabs>
-
-      {editingTask && (
-        <TaskEditor
-          plant={row}
-          task={editingTask === 'new' ? null : editingTask}
-          onClose={() => setEditingTask(null)}
+      {editing && (
+        <MaintenanceDialog
+          plantId={row.id}
+          task={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
           onSaved={() => {
-            queryClient.invalidateQueries({ queryKey: ['plant-detail', psr] });
-            queryClient.invalidateQueries({ queryKey: ['plantas'] });
-            setEditingTask(null);
+            refresh();
+            setEditing(null);
           }}
         />
       )}
-      {deletingTask && (
-        <DeleteTaskDialog
-          task={deletingTask}
-          onClose={() => setDeletingTask(null)}
-          onDeleted={() => {
-            queryClient.invalidateQueries({ queryKey: ['plant-detail', psr] });
-            queryClient.invalidateQueries({ queryKey: ['plantas'] });
-            setDeletingTask(null);
+      {settingsOpen && (
+        <PlantSettingsDialog
+          plant={row}
+          onClose={() => setSettingsOpen(false)}
+          onSaved={() => {
+            refresh();
+            setSettingsOpen(false);
           }}
         />
       )}
@@ -216,218 +290,533 @@ export default function PlantDetailPage() {
   );
 }
 
-function TaskCard({ task, onEdit, onDelete }: { task: TaskRow; onEdit: () => void; onDelete: () => void }) {
+/* ---------- Card ---------- */
+
+function MaintenanceCard({ task, onOpen }: { task: TaskRow; onOpen: () => void }) {
+  const nd = nextDue(task);
+  const status: ExecStatus = nd?.status ?? 'DONE';
   return (
-    <article className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="font-semibold text-text">{task.descPosicionMant ?? 'Sin descripción'}</h2>
-            <Badge variant="outline">{labelFrequency(task.frecuenciaCodigo)}</Badge>
-            {task.manualOverride && <Badge variant="outline">Manual</Badge>}
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-left transition-colors hover:border-ds-accent/50 hover:bg-[var(--color-surface-2)]"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {task.posicionMant && (
+                <span className="font-mono text-[11px] text-ds-muted">#{task.posicionMant}</span>
+              )}
+              <TypeChip tipo={task.tipo} />
+            </div>
+            <p className="mt-1 truncate font-medium text-text">{taskTitle(task)}</p>
+            <p className="mt-0.5 truncate text-xs text-ds-muted">
+              {freqLabel(task.frecuenciaCodigo)} · {fmtHh(task.hhReal)} HH
+              {task.responsable ? ` · ${task.responsable}` : ''}
+              {task.equipo ? ` · ${task.equipo}` : ''}
+            </p>
           </div>
-          <p className="mt-1 text-sm text-ds-muted">{task.denomUbicacionTecnica ?? 'Sin ubicación'} · {task.equipo ?? 'Sin equipo'}</p>
+          <ExecChip status={status} dueDate={nd?.dueDate} />
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={onEdit}><Pencil className="size-4" />Editar</Button>
-          <Button variant="outline" size="sm" onClick={onDelete}><Trash2 className="size-4" />Eliminar</Button>
-        </div>
-      </div>
-      <div className="mt-4 grid gap-2 sm:grid-cols-4">
-        <StatBox label="HH base" value={fmtHh(Number(task.hhReal ?? 0))} />
-        <StatBox label="Mes inicio" value={task.mesInicio ? String(task.mesInicio) : '—'} />
-        <StatBox label="Eventos" value={int(task.schedule.length)} />
-        <StatBox label="Próximas" value={int(task.executions.length)} />
-      </div>
-    </article>
+      </button>
+    </li>
   );
 }
 
-function ExecutionCard({ execution, onSaved }: { execution: TaskRow['executions'][number] & { task: TaskRow }; onSaved: () => void }) {
-  const save = useMutation({
-    mutationFn: (status: ExecStatus) =>
-      api(`/api/schedule/executions/${execution.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status }),
-      }),
-    onSuccess: onSaved,
+/* ---------- Próximas ---------- */
+
+function ProximasList({
+  rows,
+  onOpenTask,
+  onChanged,
+}: {
+  rows: Array<{ e: ExecutionRow; t: TaskRow }>;
+  onOpenTask: (t: TaskRow) => void;
+  onChanged: () => void;
+}) {
+  const [confirm, setConfirm] = useState<{ exec: ExecutionRow; action: 'DONE' | 'SKIPPED' } | null>(null);
+
+  const mutate = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: 'DONE' | 'SKIPPED' }) =>
+      api(`/api/schedule/executions/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+    onSuccess: (_d, v) => {
+      toast(v.status === 'DONE' ? 'Mantención marcada como completada' : 'Mantención omitida');
+      onChanged();
+      setConfirm(null);
+    },
+    onError: () => toast('No se pudo guardar el cambio', 'error'),
   });
+
+  if (rows.length === 0) {
+    return <EmptyState title="Sin mantenciones próximas" detail="No hay nada pendiente ni vencido en esta planta." />;
+  }
+
   return (
-    <article className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p className="font-medium text-text">{execution.task.descPosicionMant ?? 'Sin descripción'}</p>
-          <p className="mt-1 text-sm text-ds-muted">{DATE.format(new Date(execution.dueDate))} · {labelFrequency(execution.task.frecuenciaCodigo)} · {fmtHh(Number(execution.hhPlanned))} HH</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <ExecutionBadge status={execution.status} />
-          <Button variant="outline" size="sm" onClick={() => save.mutate('DONE')} disabled={save.isPending}>Completar</Button>
-          <Button variant="outline" size="sm" onClick={() => save.mutate('SKIPPED')} disabled={save.isPending}>Omitir</Button>
-        </div>
-      </div>
-    </article>
+    <>
+      <ul className="grid gap-2" role="list">
+        {rows.map(({ e, t }) => (
+          <li
+            key={e.id}
+            className={`rounded-xl border bg-[var(--color-surface)] p-3 ${
+              e.status === 'OVERDUE' ? 'border-danger/40' : 'border-[var(--color-border)]'
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <button type="button" onClick={() => onOpenTask(t)} className="min-w-0 text-left">
+                <div className="flex items-center gap-1.5">
+                  <ExecChip status={e.status} dueDate={e.dueDate} />
+                  <TypeChip tipo={t.tipo} />
+                </div>
+                <p className="mt-1 truncate font-medium text-text hover:underline">{taskTitle(t)}</p>
+                <p className="mt-0.5 text-xs text-ds-muted">
+                  {freqLabel(t.frecuenciaCodigo)} · {fmtHh(e.hhPlanned)} HH
+                </p>
+              </button>
+            </div>
+            <div className="mt-2.5 flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1 border-ok/40 text-ok hover:bg-ok-dim"
+                onClick={() => setConfirm({ exec: e, action: 'DONE' })}
+              >
+                <CheckCircle2 className="size-4" /> Completar
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1"
+                onClick={() => setConfirm({ exec: e, action: 'SKIPPED' })}
+              >
+                Omitir
+              </Button>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      <ConfirmDialog
+        open={confirm !== null}
+        title={confirm?.action === 'DONE' ? '¿Marcar como completada?' : '¿Omitir esta mantención?'}
+        detail={
+          confirm?.action === 'DONE'
+            ? 'Se registrará como ejecutada en la fecha de hoy.'
+            : 'Quedará marcada como omitida para ese período.'
+        }
+        confirmLabel={confirm?.action === 'DONE' ? 'Completar' : 'Omitir'}
+        pending={mutate.isPending}
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => confirm && mutate.mutate({ id: confirm.exec.id, status: confirm.action })}
+      />
+    </>
   );
 }
 
-function TaskEditor({ plant, task, onClose, onSaved }: { plant: PlantDetail; task: TaskRow | null; onClose: () => void; onSaved: () => void }) {
-  const [description, setDescription] = useState(task?.descPosicionMant ?? '');
-  const [location, setLocation] = useState(task?.denomUbicacionTecnica ?? '');
-  const [equipment, setEquipment] = useState(task?.equipo ?? '');
-  const [frequency, setFrequency] = useState(task?.frecuenciaCodigo ?? '1A');
-  const [startMonth, setStartMonth] = useState(String(task?.mesInicio ?? 1));
+/* ---------- Editor / detalle ---------- */
+
+function MaintenanceDialog({
+  plantId,
+  task,
+  onClose,
+  onSaved,
+}: {
+  plantId: string;
+  task: TaskRow | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const isNew = task === null;
+  const [titulo, setTitulo] = useState(task?.titulo ?? task?.descPosicionMant ?? '');
+  const [descripcion, setDescripcion] = useState(task?.descripcion ?? '');
+  const [tipo, setTipo] = useState<MaintType>(task?.tipo ?? 'PREVENTIVA');
+  const [frecuencia, setFrecuencia] = useState(task?.frecuenciaCodigo ?? '1A');
+  const [mesInicio, setMesInicio] = useState(String(task?.mesInicio ?? 1));
   const [hh, setHh] = useState(String(task?.hhReal ?? 0));
-  const selected = FREQUENCIES.find((item) => item.code === frequency) ?? FREQUENCIES[2];
+  const [responsable, setResponsable] = useState(task?.responsable ?? '');
+  const [confirmDel, setConfirmDel] = useState(false);
+
+  const freq = FREQUENCIES.find((f) => f.code === frecuencia) ?? { code: '1A', label: 'Anual', months: 12 };
+
   const save = useMutation({
     mutationFn: () =>
-      api(task ? `/api/tasks/${task.id}` : '/api/tasks', {
-        method: task ? 'PATCH' : 'POST',
+      api(isNew ? '/api/tasks' : `/api/tasks/${task.id}`, {
+        method: isNew ? 'POST' : 'PATCH',
         body: JSON.stringify({
-          plantId: plant.id,
-          descPosicionMant: description,
-          denomUbicacionTecnica: location || plant.name,
-          ubicacionTecnica: location || plant.name,
-          equipo: equipment,
-          denomObjetoTecnico: equipment,
-          frecuenciaCodigo: frequency,
-          frecuenciaMeses: selected?.months ?? 12,
-          mesInicio: Number(startMonth),
-          hhReal: Number(hh),
+          plantId,
+          titulo: titulo.trim(),
+          descPosicionMant: titulo.trim(),
+          descripcion: descripcion.trim() || undefined,
+          tipo,
+          responsable: responsable.trim() || undefined,
+          frecuenciaCodigo: frecuencia,
+          frecuenciaMeses: freq.months,
+          mesInicio: Number(mesInicio),
+          hhReal: Number(hh) || 0,
         }),
       }),
-    onSuccess: onSaved,
+    onSuccess: () => {
+      toast(isNew ? 'Mantención creada' : 'Mantención actualizada');
+      onSaved();
+    },
+    onError: () => toast('No se pudo guardar la mantención', 'error'),
   });
-  return (
-    <Modal title={task ? 'Editar tarea' : 'Agregar tarea'} onClose={onClose}>
-      <form className="grid gap-3" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
-        <Field label="Descripción"><Input value={description} onChange={(event) => setDescription(event.target.value)} required /></Field>
-        <Field label="Ubicación"><Input value={location} onChange={(event) => setLocation(event.target.value)} placeholder={plant.name} /></Field>
-        <Field label="Equipo"><Input value={equipment} onChange={(event) => setEquipment(event.target.value)} /></Field>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Field label="Frecuencia">
-            <select value={frequency} onChange={(event) => setFrequency(event.target.value)} className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-text">
-              {FREQUENCIES.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
-            </select>
-          </Field>
-          <Field label="Mes inicio"><Input type="number" min={1} max={12} value={startMonth} onChange={(event) => setStartMonth(event.target.value)} /></Field>
-          <Field label="HH base"><Input type="number" min={0} step="0.1" value={hh} onChange={(event) => setHh(event.target.value)} /></Field>
-        </div>
-        {save.isError && <p className="text-sm text-danger">No se pudo guardar la tarea.</p>}
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
-          <Button type="submit" disabled={save.isPending}>{save.isPending ? 'Guardando...' : 'Guardar'}</Button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
 
-function DeleteTaskDialog({ task, onClose, onDeleted }: { task: TaskRow; onClose: () => void; onDeleted: () => void }) {
-  const [confirmation, setConfirmation] = useState('');
-  const remove = useMutation({
+  const del = useMutation({
     mutationFn: () =>
-      api(`/api/tasks/${task.id}`, {
-        method: 'DELETE',
-        body: JSON.stringify({ confirmation }),
-      }),
-    onSuccess: onDeleted,
+      api(`/api/tasks/${task!.id}`, { method: 'DELETE', body: JSON.stringify({ confirmation: 'ELIMINAR' }) }),
+    onSuccess: () => {
+      toast('Mantención eliminada');
+      onSaved();
+    },
+    onError: () => toast('No se pudo eliminar', 'error'),
   });
+
   return (
-    <Modal title="Eliminar tarea" onClose={onClose}>
-      <form className="grid gap-3" onSubmit={(event) => { event.preventDefault(); remove.mutate(); }}>
-        <p className="text-sm text-ds-muted">La tarea se desactivará y quedará recuperable en auditoría. Escribe <strong className="text-text">ELIMINAR</strong> para confirmar.</p>
-        <Input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="ELIMINAR" />
-        {remove.isError && <p className="text-sm text-danger">Confirmación inválida o sin permisos.</p>}
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
-          <Button type="submit" disabled={confirmation !== 'ELIMINAR' || remove.isPending}>Eliminar</Button>
-        </div>
-      </form>
-    </Modal>
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{isNew ? 'Nueva mantención' : 'Editar mantención'}</DialogTitle>
+        </DialogHeader>
+        {!isNew && task.posicionMant && (
+          <p className="-mt-2 font-mono text-xs text-ds-muted">ID #{task.posicionMant}</p>
+        )}
+        <form
+          className="grid gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (titulo.trim()) save.mutate();
+          }}
+        >
+          <Labeled label="Título">
+            <Input value={titulo} onChange={(e) => setTitulo(e.target.value)} required placeholder="Ej. Calibración válvula de seguridad" />
+          </Labeled>
+          <Labeled label="Descripción (opcional)">
+            <textarea
+              value={descripcion}
+              onChange={(e) => setDescripcion(e.target.value)}
+              rows={3}
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-text"
+              placeholder="Detalles, instrucciones, observaciones…"
+            />
+          </Labeled>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Labeled label="Tipo">
+              <NativeSelect value={tipo} onChange={(v) => setTipo(v as MaintType)}>
+                <option value="PREVENTIVA">Preventiva</option>
+                <option value="CORRECTIVA">Correctiva</option>
+                <option value="PREDICTIVA">Predictiva</option>
+              </NativeSelect>
+            </Labeled>
+            <Labeled label="Frecuencia">
+              <NativeSelect value={frecuencia} onChange={setFrecuencia}>
+                {FREQUENCIES.map((f) => (
+                  <option key={f.code} value={f.code}>
+                    {f.label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Labeled>
+            <Labeled label="Mes de inicio">
+              <NativeSelect value={mesInicio} onChange={setMesInicio}>
+                {MONTHS.map((m, i) => (
+                  <option key={m} value={String(i + 1)}>
+                    {m}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Labeled>
+            <Labeled label="HH estimadas">
+              <Input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="0.5"
+                value={hh}
+                onChange={(e) => setHh(e.target.value)}
+              />
+            </Labeled>
+          </div>
+          <Labeled label="Responsable (opcional)">
+            <Input value={responsable} onChange={(e) => setResponsable(e.target.value)} placeholder="Nombre del responsable" />
+          </Labeled>
+
+          <DialogFooter className="mt-1 gap-2">
+            {!isNew && (
+              <Button
+                type="button"
+                variant="outline"
+                className="mr-auto border-danger/40 text-danger hover:bg-danger-dim"
+                onClick={() => setConfirmDel(true)}
+              >
+                <Trash2 className="size-4" /> Eliminar
+              </Button>
+            )}
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={save.isPending || !titulo.trim()}>
+              {save.isPending ? 'Guardando…' : 'Guardar'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+
+      {!isNew && (
+        <ConfirmDialog
+          open={confirmDel}
+          title="¿Eliminar esta mantención?"
+          detail="Quedará desactivada y recuperable desde auditoría."
+          confirmLabel="Eliminar"
+          danger
+          pending={del.isPending}
+          onCancel={() => setConfirmDel(false)}
+          onConfirm={() => del.mutate()}
+        />
+      )}
+    </Dialog>
   );
 }
 
-function PlantSettings({ plant, onSaved }: { plant: PlantDetail; onSaved: () => void }) {
+/* ---------- Ajustes ---------- */
+
+function PlantSettingsDialog({
+  plant,
+  onClose,
+  onSaved,
+}: {
+  plant: PlantDetail;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
   const [name, setName] = useState(plant.name);
   const [status, setStatus] = useState<PlantStatus>(plant.status);
-  const [aliases, setAliases] = useState(plant.aliases.map((item) => item.alias).join('\n'));
   const save = useMutation({
     mutationFn: () =>
-      api(`/api/plantas/${plant.psr}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ name, status, aliases: aliases.split('\n').map((item) => item.trim()).filter(Boolean) }),
-      }),
-    onSuccess: onSaved,
+      api(`/api/plantas/${plant.psr}`, { method: 'PATCH', body: JSON.stringify({ name, status }) }),
+    onSuccess: () => {
+      toast('Ajustes guardados');
+      onSaved();
+    },
+    onError: () => toast('No se pudo guardar', 'error'),
   });
+
   return (
-    <form className="grid gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4" onSubmit={(event: FormEvent) => { event.preventDefault(); save.mutate(); }}>
-      <Field label="Nombre visible"><Input value={name} onChange={(event) => setName(event.target.value)} /></Field>
-      <Field label="Estado">
-        <select value={status} onChange={(event) => setStatus(event.target.value as PlantStatus)} className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-text">
-          <option value="ACTIVE">Activa</option>
-          <option value="STANDBY">Standby</option>
-          <option value="INACTIVE">Inactiva</option>
-        </select>
-      </Field>
-      <Field label="Aliases">
-        <textarea value={aliases} onChange={(event) => setAliases(event.target.value)} rows={7} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-text" />
-      </Field>
-      <div><Button type="submit" disabled={save.isPending}>{save.isPending ? 'Guardando...' : 'Guardar ajustes'}</Button></div>
-    </form>
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Ajustes de la planta</DialogTitle>
+        </DialogHeader>
+        <form
+          className="grid gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            save.mutate();
+          }}
+        >
+          <Labeled label="Nombre">
+            <Input value={name} onChange={(e) => setName(e.target.value)} required />
+          </Labeled>
+          <Labeled label="Estado">
+            <NativeSelect value={status} onChange={(v) => setStatus(v as PlantStatus)}>
+              <option value="ACTIVE">Activa</option>
+              <option value="STANDBY">Standby</option>
+              <option value="INACTIVE">Inactiva</option>
+            </NativeSelect>
+          </Labeled>
+          <DialogFooter className="mt-1 gap-2">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={save.isPending}>
+              {save.isPending ? 'Guardando…' : 'Guardar'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+/* ---------- Confirm ---------- */
+
+function ConfirmDialog({
+  open,
+  title,
+  detail,
+  confirmLabel,
+  danger,
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  title: string;
+  detail: string;
+  confirmLabel: string;
+  danger?: boolean;
+  pending?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-4 py-6">
-      <section className="w-full max-w-2xl rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xl">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-text">{title}</h2>
-          <Button type="button" variant="outline" size="sm" onClick={onClose}>Cerrar</Button>
-        </div>
-        {children}
-      </section>
+    <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-ds-muted">{detail}</p>
+        <DialogFooter className="mt-2 gap-2">
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            disabled={pending}
+            className={danger ? 'bg-danger text-white hover:bg-danger/90' : undefined}
+            onClick={onConfirm}
+          >
+            {pending ? 'Procesando…' : confirmLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ---------- UI bits ---------- */
+
+function Kpi({
+  label,
+  value,
+  icon,
+  tone,
+}: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+  tone?: 'danger';
+}) {
+  return (
+    <article
+      className={`rounded-xl border bg-[var(--color-surface)] p-3 ${
+        tone === 'danger' ? 'border-danger/30' : 'border-[var(--color-border)]'
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2 text-ds-muted">
+        <p className="text-[10px] uppercase tracking-[0.16em]">{label}</p>
+        {icon}
+      </div>
+      <p className={`mt-2 text-xl font-semibold tabular-nums ${tone === 'danger' ? 'text-danger' : 'text-text'}`}>
+        {value}
+      </p>
+    </article>
+  );
+}
+
+function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+        active ? 'border-ds-accent text-text' : 'border-transparent text-ds-muted hover:text-text'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function FilterSelect({
+  value,
+  onChange,
+  placeholder,
+  children,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={`h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm ${
+        value ? 'text-text' : 'text-ds-muted'
+      }`}
+    >
+      <option value="">{placeholder}</option>
+      {children}
+    </select>
+  );
+}
+
+function NativeSelect({
+  value,
+  onChange,
+  children,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-text"
+    >
+      {children}
+    </select>
+  );
+}
+
+function Labeled({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="grid gap-1 text-xs font-medium text-ds-muted">
+      {label}
+      {children}
+    </label>
+  );
+}
+
+function TypeChip({ tipo }: { tipo: MaintType }) {
+  const m = TYPE_META[tipo];
+  return <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${m.cls}`}>{m.label}</span>;
+}
+
+function ExecChip({ status, dueDate }: { status: ExecStatus; dueDate?: string }) {
+  const meta: Record<ExecStatus, { label: string; cls: string }> = {
+    OVERDUE: { label: 'Vencida', cls: 'bg-red-100 text-red-800' },
+    PENDING: { label: 'Pendiente', cls: 'bg-amber-100 text-amber-800' },
+    DONE: { label: 'Al día', cls: 'bg-emerald-100 text-emerald-800' },
+    SKIPPED: { label: 'Omitida', cls: 'bg-slate-200 text-slate-700' },
+  };
+  const m = meta[status];
+  return (
+    <span className={`whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium ${m.cls}`}>
+      {m.label}
+      {dueDate && (status === 'PENDING' || status === 'OVERDUE') ? ` · ${dateFormat.format(new Date(dueDate))}` : ''}
+    </span>
+  );
+}
+
+function PlantStatusChip({ status }: { status: PlantStatus }) {
+  const m: Record<PlantStatus, { label: string; cls: string }> = {
+    ACTIVE: { label: 'Activa', cls: 'bg-emerald-100 text-emerald-800' },
+    STANDBY: { label: 'Standby', cls: 'bg-amber-100 text-amber-800' },
+    INACTIVE: { label: 'Inactiva', cls: 'bg-slate-200 text-slate-700' },
+  };
+  return <span className={`rounded px-2 py-0.5 text-xs font-medium ${m[status].cls}`}>{m[status].label}</span>;
+}
+
+function EmptyState({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-10 text-center">
+      <p className="font-semibold text-text">{title}</p>
+      <p className="mt-1 text-sm text-ds-muted">{detail}</p>
     </div>
   );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="grid gap-1 text-sm text-ds-muted">{label}{children}</label>;
-}
-
-function Metric({ title, value, icon }: { title: string; value: string; icon: React.ReactNode }) {
-  return <article className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4"><div className="flex items-center justify-between gap-2 text-ds-muted"><p className="text-[11px] uppercase tracking-[0.18em]">{title}</p>{icon}</div><p className="mt-4 text-2xl font-semibold text-text tabular-nums">{value}</p></article>;
-}
-
-function StatBox({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2"><p className="text-xs text-ds-muted">{label}</p><p className="mt-1 font-semibold text-text tabular-nums">{value}</p></div>;
-}
-
-function StatLine({ label, value }: { label: string; value: string }) {
-  return <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm"><span className="font-medium text-text">{label}</span><span className="text-ds-muted">{value}</span></div>;
-}
-
-function PanelState({ title, detail }: { title: string; detail: string }) {
-  return <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center"><h2 className="font-semibold text-text">{title}</h2><p className="mt-2 text-sm text-ds-muted">{detail}</p></section>;
-}
-
-function StatusBadge({ status }: { status: PlantStatus }) {
-  const label = status === 'ACTIVE' ? 'Activa' : status === 'STANDBY' ? 'Standby' : 'Inactiva';
-  return <Badge variant="outline">{label}</Badge>;
-}
-
-function ExecutionBadge({ status }: { status: ExecStatus }) {
-  const label = status === 'DONE' ? 'Completada' : status === 'SKIPPED' ? 'Omitida' : status === 'OVERDUE' ? 'Vencida' : 'Pendiente';
-  return <Badge variant="outline">{label}</Badge>;
-}
-
-function statusMap(rows: PlantDetail['kpis']['statusCounts']) {
-  return Object.fromEntries(rows.map((row) => [row.status, row.count])) as Partial<Record<ExecStatus, number>>;
-}
-
-function labelFrequency(value: string | null) {
-  if (value === '1M') return 'Mensual';
-  if (value === '6M') return 'Semestral';
-  if (value === '1A') return 'Anual';
-  if (value === '5A') return 'Quinquenal';
-  return value ?? 'Sin frecuencia';
 }

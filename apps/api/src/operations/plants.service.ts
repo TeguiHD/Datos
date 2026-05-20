@@ -303,27 +303,28 @@ export class PlantsService {
         hhActual,
       },
       statusSplit,
-      lastEvidence: lastEvidence
-        ? {
-            id: lastEvidence.id,
-            originalName: lastEvidence.originalName,
-            mime: lastEvidence.mime,
-            sizeBytes: lastEvidence.sizeBytes,
-            uploadedAt: lastEvidence.uploadedAt,
-            description: lastEvidence.description,
-            executionId: lastEvidence.executionId,
-            planTask: {
-              id: lastEvidence.execution.planTask.id,
-              description: lastEvidence.execution.planTask.description,
-              equipment: lastEvidence.execution.planTask.equipment
-                ? {
-                    id: lastEvidence.execution.planTask.equipment.id,
-                    name: lastEvidence.execution.planTask.equipment.name,
-                  }
-                : null,
-            },
-          }
-        : null,
+      lastEvidence:
+        lastEvidence && lastEvidence.execution
+          ? {
+              id: lastEvidence.id,
+              originalName: lastEvidence.originalName,
+              mime: lastEvidence.mime,
+              sizeBytes: lastEvidence.sizeBytes,
+              uploadedAt: lastEvidence.uploadedAt,
+              description: lastEvidence.description,
+              executionId: lastEvidence.executionId,
+              planTask: {
+                id: lastEvidence.execution.planTask.id,
+                description: lastEvidence.execution.planTask.description,
+                equipment: lastEvidence.execution.planTask.equipment
+                  ? {
+                      id: lastEvidence.execution.planTask.equipment.id,
+                      name: lastEvidence.execution.planTask.equipment.name,
+                    }
+                  : null,
+              },
+            }
+          : null,
       upcoming,
       recentChanges,
     };

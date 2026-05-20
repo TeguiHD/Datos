@@ -1,5 +1,6 @@
-import { IsInt, IsNumber, IsOptional, IsString, Length, Max, Min } from 'class-validator';
+import { IsEnum, IsInt, IsNumber, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
+import { MaintenanceType } from '@prisma/client';
 
 export class ListTasksDto {
   @IsOptional() @IsString() q?: string;
@@ -38,6 +39,10 @@ export class UpsertTaskDto {
   @IsOptional() @IsString() ubicacionTecnica?: string;
   @IsOptional() @IsString() denomUbicacionTecnica?: string;
   @IsOptional() @IsString() posicionMant?: string;
+  @IsOptional() @IsString() @Length(1, 200) titulo?: string;
+  @IsOptional() @IsString() @Length(0, 2000) descripcion?: string;
+  @IsOptional() @IsEnum(MaintenanceType) tipo?: MaintenanceType;
+  @IsOptional() @IsString() @Length(0, 160) responsable?: string;
   @IsOptional() @IsString() ptoTbjoResponsable?: string;
   @IsOptional() @IsString() equipo?: string;
   @IsOptional() @IsString() denomObjetoTecnico?: string;

@@ -36,6 +36,12 @@ enum EquipmentType {
   OTHER
 }
 
+enum MaintenanceType {
+  PREVENTIVA
+  CORRECTIVA
+  PREDICTIVA
+}
+
 enum PlanFrequency {
   MONTHLY
   QUARTERLY
@@ -166,6 +172,10 @@ model MaintenanceTask {
   ubicacionTecnica      String?
   denomUbicacionTecnica String?
   posicionMant          String?
+  titulo                String?
+  descripcion           String?
+  tipo                  MaintenanceType   @default(PREVENTIVA)
+  responsable           String?
   ptoTbjoResponsable    String?
   equipo                String?
   denomObjetoTecnico    String?
@@ -223,6 +233,7 @@ model TaskExecution {
   source    String          @default("CALC")
   operator  String?
   notes     String?
+  evidence  Evidence[]
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
 
@@ -358,22 +369,25 @@ model OperationalExecution {
 }
 
 model Evidence {
-  id           String               @id @default(cuid())
-  executionId  String
-  execution    OperationalExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
-  filename     String
-  originalName String?
-  mime         String
-  sizeBytes    Int
-  sha256       String
-  path         String
-  description  String?
-  uploadedById String?
-  uploadedBy   User?                @relation("EvidenceUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
-  uploadedAt   DateTime             @default(now())
-  deletedAt    DateTime?
+  id              String                @id @default(cuid())
+  executionId     String?
+  execution       OperationalExecution? @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  taskExecutionId String?
+  taskExecution   TaskExecution?        @relation(fields: [taskExecutionId], references: [id], onDelete: Cascade)
+  filename        String
+  originalName    String?
+  mime            String
+  sizeBytes       Int
+  sha256          String
+  path            String
+  description     String?
+  uploadedById    String?
+  uploadedBy      User?                 @relation("EvidenceUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+  uploadedAt      DateTime              @default(now())
+  deletedAt       DateTime?
 
   @@index([executionId])
+  @@index([taskExecutionId])
   @@index([uploadedById])
   @@index([sha256])
   @@index([deletedAt])

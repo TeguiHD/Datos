@@ -10,6 +10,7 @@ import { Sidebar } from './_components/Sidebar';
 import { Topbar } from './_components/Topbar';
 import { BottomNav } from './_components/BottomNav';
 import { PwaShell } from './_components/PwaShell';
+import { Toaster } from '@/lib/toast';
 
 interface MeResponse {
   id: string;
@@ -73,6 +74,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </main>
         <BottomNav />
       </div>
+      <Toaster />
     </div>
   );
 }
